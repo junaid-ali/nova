@@ -38,12 +38,14 @@ CONF.register_opt(migrate_opt)
 
 class LiveMigrationTask(object):
     def __init__(self, context, instance, destination,
-                 block_migration, disk_over_commit):
+                 block_migration, disk_over_commit,
+                 post_copy):
         self.context = context
         self.instance = instance
         self.destination = destination
         self.block_migration = block_migration
         self.disk_over_commit = disk_over_commit
+        self.post_copy = post_copy
         self.source = instance.host
         self.migrate_data = None
         self.compute_rpcapi = compute_rpcapi.ComputeAPI()
@@ -67,7 +69,8 @@ class LiveMigrationTask(object):
                 instance=self.instance,
                 dest=self.destination,
                 block_migration=self.block_migration,
-                migrate_data=self.migrate_data)
+                migrate_data=self.migrate_data,
+                post_copy=self.post_copy)
 
     def rollback(self):
         # TODO(johngarbutt) need to implement the clean up operation
@@ -182,10 +185,12 @@ class LiveMigrationTask(object):
 
 
 def execute(context, instance, destination,
-            block_migration, disk_over_commit):
+            block_migration, disk_over_commit,
+            post_copy):
     task = LiveMigrationTask(context, instance,
                              destination,
                              block_migration,
-                             disk_over_commit)
+                             disk_over_commit,
+                             post_copy)
     # TODO(johngarbutt) create a superclass that contains a safe_execute call
     return task.execute()

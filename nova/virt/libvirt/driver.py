@@ -163,6 +163,16 @@ libvirt_opts = [
                        'VIR_MIGRATE_LIVE, VIR_MIGRATE_TUNNELLED, '
                        'VIR_MIGRATE_NON_SHARED_INC',
                help='Migration flags to be set for block migration'),
+    cfg.StrOpt('post_copy_live_migration_flag',
+               default='VIR_MIGRATE_UNDEFINE_SOURCE, VIR_MIGRATE_PEER2PEER, '
+                       'VIR_MIGRATE_LIVE, VIR_MIGRATE_POSTCOPY_AFTER_PRECOPY',
+               help='Migration flags to be set for post-copy live migration'),
+    cfg.StrOpt('post_copy_block_migration_flag',
+               default='VIR_MIGRATE_UNDEFINE_SOURCE, VIR_MIGRATE_PEER2PEER, '
+                       'VIR_MIGRATE_LIVE, VIR_MIGRATE_POSTCOPY_AFTER_PRECOPY '
+                       'VIR_MIGRATE_NON_SHARED_INC',
+               help='Migration flags to be set for post-copy '
+                    'block migration'),
     cfg.IntOpt('live_migration_bandwidth',
                default=0,
                help='Maximum bandwidth to be used during migration, in Mbps'),
@@ -5254,7 +5264,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
     def live_migration(self, context, instance, dest,
                        post_method, recover_method, block_migration=False,
-                       migrate_data=None):
+                       migrate_data=None, post_copy=False):
         """Spawning live_migration operation for distributing high-load.
 
         :param context: security context
@@ -5270,6 +5280,7 @@ class LibvirtDriver(driver.ComputeDriver):
             expected nova.compute.manager._rollback_live_migration.
         :param block_migration: if true, do block migration.
         :param migrate_data: implementation specific params
+        :param post_copy: if true, do post-copy live migration
 
         """
 
@@ -5281,7 +5292,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
         greenthread.spawn(self._live_migration, context, instance, dest,
                           post_method, recover_method, block_migration,
-                          migrate_data)
+                          migrate_data, post_copy)
 
     def _correct_listen_addr(self, old_xml_str, listen_addrs):
         # NB(sross): can't just use LibvirtConfigGuest#parse_str
@@ -5343,7 +5354,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
     def _live_migration(self, context, instance, dest, post_method,
                         recover_method, block_migration=False,
-                        migrate_data=None):
+                        migrate_data=None, post_copy=False):
         """Do live migration.
 
         :param context: security context
@@ -5359,6 +5370,7 @@ class LibvirtDriver(driver.ComputeDriver):
             expected nova.compute.manager._rollback_live_migration.
         :param block_migration: if true, do block migration.
         :param migrate_data: implementation specific params
+        :param post_copy: if true, do post-copy live migration
         """
 
         # Do live migration.

@@ -234,11 +234,12 @@ class LocalComputeTaskAPI(object):
             None, None, reservations)
 
     def live_migrate_instance(self, context, instance, host_name,
-                              block_migration, disk_over_commit):
+                              block_migration, disk_over_commit,
+                              post_copy):
         scheduler_hint = {'host': host_name}
         self._manager.migrate_server(
             context, instance, scheduler_hint, True, False, None,
-            block_migration, disk_over_commit, None)
+            block_migration, disk_over_commit, post_copy, None)
 
     def build_instances(self, context, instances, image,
             filter_properties, admin_password, injected_files,
@@ -345,11 +346,12 @@ class ComputeTaskAPI(object):
             None, None, reservations)
 
     def live_migrate_instance(self, context, instance, host_name,
-                              block_migration, disk_over_commit):
+                              block_migration, disk_over_commit,
+                              post_copy):
         scheduler_hint = {'host': host_name}
         self.conductor_compute_rpcapi.migrate_server(
             context, instance, scheduler_hint, True, False, None,
-            block_migration, disk_over_commit, None)
+            block_migration, disk_over_commit, post_copy, None)
 
     def build_instances(self, context, instances, image, filter_properties,
             admin_password, injected_files, requested_networks,

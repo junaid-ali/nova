@@ -4947,7 +4947,7 @@ class ComputeManager(manager.Manager):
     @wrap_exception()
     @wrap_instance_fault
     def live_migration(self, context, dest, instance, block_migration,
-                       migrate_data):
+                       migrate_data, post_copy):
         """Executing live migration.
 
         :param context: security context
@@ -4955,6 +4955,7 @@ class ComputeManager(manager.Manager):
         :param dest: destination host
         :param block_migration: if true, prepare for block migration
         :param migrate_data: implementation specific params
+        :param post_copy: if true, prepare for post-copy live migration
 
         """
 
@@ -4994,7 +4995,8 @@ class ComputeManager(manager.Manager):
         self.driver.live_migration(context, instance, dest,
                                    self._post_live_migration,
                                    self._rollback_live_migration,
-                                   block_migration, migrate_data)
+                                   block_migration, migrate_data,
+                                   post_copy)
 
     def _live_migration_cleanup_flags(self, block_migration, migrate_data):
         """Determine whether disks or intance path need to be cleaned up after

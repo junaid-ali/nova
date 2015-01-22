@@ -319,10 +319,11 @@ class AdminActionsController(wsgi.Controller):
         try:
             block_migration = body["os-migrateLive"]["block_migration"]
             disk_over_commit = body["os-migrateLive"]["disk_over_commit"]
+            post_copy = body["os-migrateLive"]["post_copy"]
             host = body["os-migrateLive"]["host"]
         except (TypeError, KeyError):
-            msg = _("host, block_migration and disk_over_commit must "
-                    "be specified for live migration.")
+            msg = _("host, block_migration, post_copy, and "
+                    "disk_over_commit must be specified for live migration.")
             raise exc.HTTPBadRequest(explanation=msg)
 
         try:
@@ -330,6 +331,8 @@ class AdminActionsController(wsgi.Controller):
                                                         strict=True)
             disk_over_commit = strutils.bool_from_string(disk_over_commit,
                                                          strict=True)
+            post_copy = strutils.bool_from_string(post_copy,
+                                                  strict=True)
         except ValueError as err:
             raise exc.HTTPBadRequest(explanation=six.text_type(err))
 
@@ -337,7 +340,7 @@ class AdminActionsController(wsgi.Controller):
                                        want_objects=True)
         try:
             self.compute_api.live_migrate(context, instance, block_migration,
-                                          disk_over_commit, host)
+                                          disk_over_commit, post_copy, host)
         except (exception.NoValidHost,
                 exception.ComputeServiceUnavailable,
                 exception.InvalidHypervisorType,
