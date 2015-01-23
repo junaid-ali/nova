@@ -5376,9 +5376,18 @@ class LibvirtDriver(driver.ComputeDriver):
         # Do live migration.
         try:
             if block_migration:
-                flaglist = CONF.libvirt.block_migration_flag.split(',')
+                if post_copy:
+                    raw_flaglist= CONF.libvirt.post_copy_block_migration_flag
+                    flaglist = raw_flaglist.split(',')
+                else:
+                    flaglist = CONF.libvirt.block_migration_flag.split(',')
             else:
-                flaglist = CONF.libvirt.live_migration_flag.split(',')
+                if post_copy:
+                    raw_flaglist = CONF.libvirt.post_copy_live_migration_flag
+                    flaglist = raw_flaglist.split(',')
+                else:
+                    flaglist = CONF.libvirt.live_migration_flag.split(',')
+
             flagvals = [getattr(libvirt, x.strip()) for x in flaglist]
             logical_sum = reduce(lambda x, y: x | y, flagvals)
 
@@ -5393,10 +5402,17 @@ class LibvirtDriver(driver.ComputeDriver):
 
             if migratable_flag is None or listen_addrs is None:
                 self._check_graphics_addresses_can_live_migrate(listen_addrs)
-                dom.migrateToURI(CONF.libvirt.live_migration_uri % dest,
-                                 logical_sum,
-                                 None,
-                                 CONF.libvirt.live_migration_bandwidth)
+
+                if post_copy:
+                    # Using migrateToURI3 for postcopy
+                    dom.migrateToURI3(CONF.libvirt.live_migrate_uri % dest,
+                                      { },
+                                      logical_sum)
+                else:  
+                    dom.migrateToURI(CONF.libvirt.live_migration_uri % dest,
+                                     logical_sum,
+                                     None,
+                                     CONF.libvirt.live_migration_bandwidth)
             else:
                 old_xml_str = dom.XMLDesc(migratable_flag)
                 new_xml_str = self._correct_listen_addr(old_xml_str,
@@ -5428,11 +5444,18 @@ class LibvirtDriver(driver.ComputeDriver):
                                  instance=instance)
                         self._check_graphics_addresses_can_live_migrate(
                             listen_addrs)
-                        dom.migrateToURI(
-                            CONF.libvirt.live_migration_uri % dest,
-                            logical_sum,
-                            None,
-                            CONF.libvirt.live_migration_bandwidth)
+
+                        if post_copy:
+                            dom.migrateToURI3(
+                                CONF.libvirt.live_migration_uri % dest,
+                                { },
+                                logical_sum)
+                        else:
+                            dom.migrateToURI(
+                                CONF.libvirt.live_migration_uri % dest,
+                                logical_sum,
+                                None,
+                                CONF.libvirt.live_migration_bandwidth)
                     else:
                         raise
 
@@ -5449,7 +5472,7 @@ class LibvirtDriver(driver.ComputeDriver):
             """waiting for live migration completion."""
             try:
                 self.get_info(instance)['state']
-            except exception.InstanceNotFound:
+            except (exception.InstanceNotFound, libvirt.libvirtError) as e:
                 timer.stop()
                 post_method(context, instance, dest, block_migration,
                             migrate_data)
