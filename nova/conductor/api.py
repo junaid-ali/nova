@@ -276,6 +276,22 @@ class LocalComputeTaskAPI(object):
                 host=host,
                 preserve_ephemeral=preserve_ephemeral)
 
+    """ Calls to IORCL go through nova-conductor."""
+    def io_attach_volume(self, context, instance, volume_id):
+        self._manager.io_attach_volume(context, instance, volume_id)
+
+    def io_detach_volume(self, context, instance, volume_id):
+        self._manager.io_detach_volume(context, instance, volume_id)
+
+    def io_attach_interface(self, context, instance, vif):
+        self._manager.io_attach_interface(context, instance, vif)
+
+    def io_detach_interface(self, context, instance, vif):
+        self._manager.io_detach_interface(context, instance, vif)
+
+    def io_reset_guest(self, context, instance):
+        self._manager.io_reset_guest(context, instance)
+
 
 class API(LocalAPI):
     """Conductor API that does updates via RPC to the ConductorManager."""
@@ -386,3 +402,30 @@ class ComputeTaskAPI(object):
                 on_shared_storage=on_shared_storage,
                 preserve_ephemeral=preserve_ephemeral,
                 host=host)
+
+    """ Calls to nova-IORCL go through nova-conductor."""
+    def io_attach_volume(self, context, instance, volume_id):
+        self.conductor_compute_rpcapi.io_attach_volume(context,
+                                                       instance,
+                                                       volume_id)
+
+    def io_detach_volume(self, context, instance, volume_id):
+        self.conductor_compute_rpcapi.io_detach_volume(context,
+                                                       instance,
+                                                       volume_id)
+
+    def io_attach_interface(self, context, instance, vif):
+        self.conductor_compute_rpcapi.io_attach_interface(context,
+                                                          instance,
+                                                          vif)
+
+    def io_detach_interface(self, context, instance, vif):
+        self.conductor_compute_rpcapi.io_detach_interface(context,
+                                                          instance,
+                                                          vif)
+
+    def io_reset_guest(self, context, instance):
+        self.conductor_compute_rpcapi.io_reset_guest(context,
+                                                     instance)
+
+

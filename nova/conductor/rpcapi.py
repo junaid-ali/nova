@@ -441,3 +441,34 @@ class ComputeTaskAPI(object):
                    recreate=recreate, on_shared_storage=on_shared_storage,
                    preserve_ephemeral=preserve_ephemeral,
                    host=host)
+
+
+    """ Calls to nova-iorcl go through nova-conductor."""
+    def io_attach_volume(self, context, instance, volume_id):
+        cctxt = self.client.prepare()
+        return cctxt.cast(context, 'io_attach_volume',
+                          instance=instance,
+                          volume_id=volume_id)
+
+    def io_detach_volume(self, context, instance, volume_id):
+        cctxt = self.client.prepare()
+        return cctxt.cast(context, 'io_detach_volume',
+                          instance=instance,
+                          volume_id=volume_id)
+
+    def io_attach_interface(self, context, instance, vif):
+        cctxt = self.client.prepare()
+        return cctxt.cast(context, 'io_attach_interface',
+                          instance=instance,
+                          vif=vif)
+
+    def io_detach_interface(self, context, instance, vif):
+        cctxt = self.client.prepare()
+        return cctxt.cast(context, 'io_detach_interface',
+                          instance=instance,
+                          vif=vif)
+
+    def io_reset_guest(self, context, instance):
+        cctxt = self.client.prepare()
+        return cctxt.cast(context, 'io_reset_guest',
+                          instance=instance)

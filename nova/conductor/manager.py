@@ -48,6 +48,8 @@ from nova.scheduler import client as scheduler_client
 from nova.scheduler import driver as scheduler_driver
 from nova.scheduler import utils as scheduler_utils
 
+from nova.iorcl import rpcapi as iorcl_rpcapi
+
 LOG = logging.getLogger(__name__)
 
 # Instead of having a huge list of arguments to instance_update(), we just
@@ -455,6 +457,7 @@ class ComputeTaskManager(base.Base):
         self.compute_rpcapi = compute_rpcapi.ComputeAPI()
         self.image_api = image.API()
         self.scheduler_client = scheduler_client.SchedulerClient()
+        self.iorcl_rpcapi = iorcl_rpcapi.ComputeTaskAPI()
 
     @messaging.expected_exceptions(exception.NoValidHost,
                                    exception.ComputeServiceUnavailable,
@@ -769,3 +772,21 @@ class ComputeTaskManager(base.Base):
                     on_shared_storage=on_shared_storage,
                     preserve_ephemeral=preserve_ephemeral,
                     host=host)
+
+    """ Calls to nova-iorcl RPC API to use IO Hypervisor functionality."""
+    def io_attach_volume(self, context, instance, volume_id):
+        self.iorcl_rpcapi.io_attach_volume(context, instance, volume_id)
+
+    def io_detach_volume(self, context, instance, volume_id):
+        self.iorcl_rpcapi.io_detach_volume(context, instance, volume_id)
+
+    def io_attach_interface(self, context, instance, vif):
+        self.iorcl_rpcapi.io_attach_interface(context, instance, vif)
+
+    def io_detach_interface(self, context, instance, vif):
+        self.iorcl_rpcapi.io_detach_interface(context, instance, vif)
+
+    def io_reset_guest(self, context, instance):
+        self.iorcl_rpcapi.io_reset_guest(context, instance)
+
+
