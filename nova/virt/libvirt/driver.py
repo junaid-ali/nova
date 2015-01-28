@@ -5264,7 +5264,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
     def live_migration(self, context, instance, dest,
                        post_method, recover_method, block_migration=False,
-                       migrate_data=None, post_copy=False):
+                       post_copy=False, migrate_data=None):
         """Spawning live_migration operation for distributing high-load.
 
         :param context: security context
@@ -5292,7 +5292,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
         greenthread.spawn(self._live_migration, context, instance, dest,
                           post_method, recover_method, block_migration,
-                          migrate_data, post_copy)
+                          post_copy, migrate_data)
 
     def _correct_listen_addr(self, old_xml_str, listen_addrs):
         # NB(sross): can't just use LibvirtConfigGuest#parse_str
@@ -5354,7 +5354,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
     def _live_migration(self, context, instance, dest, post_method,
                         recover_method, block_migration=False,
-                        migrate_data=None, post_copy=False):
+                        post_copy=False, migrate_data=None):
         """Do live migration.
 
         :param context: security context

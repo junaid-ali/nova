@@ -522,7 +522,7 @@ class ComputeAPI(object):
         cctxt.cast(ctxt, 'inject_network_info', instance=instance)
 
     def live_migration(self, ctxt, instance, dest, block_migration, host,
-                       migrate_data=None, post_copy):
+                       post_copy, migrate_data=None):
         if self.client.can_send_version('3.26'):
             version = '3.26'
         else:
@@ -531,7 +531,7 @@ class ComputeAPI(object):
         cctxt = self.client.prepare(server=host, version=version)
         cctxt.cast(ctxt, 'live_migration', instance=instance,
                    dest=dest, block_migration=block_migration,
-                   migrate_data=migrate_data, post_copy=post_copy)
+                   post_copy=post_copy, migrate_data=migrate_data)
 
     def pause_instance(self, ctxt, instance):
         version = '3.0'

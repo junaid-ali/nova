@@ -69,8 +69,8 @@ class LiveMigrationTask(object):
                 instance=self.instance,
                 dest=self.destination,
                 block_migration=self.block_migration,
-                migrate_data=self.migrate_data,
-                post_copy=self.post_copy)
+                post_copy=self.post_copy,
+                migrate_data=self.migrate_data)
 
     def rollback(self):
         # TODO(johngarbutt) need to implement the clean up operation
