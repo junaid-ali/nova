@@ -5405,6 +5405,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
                 if post_copy:
                     # Using migrateToURI3 for postcopy
+                    LOG.debug("Post-copy live migration flag activated")
                     dom.migrateToURI3(CONF.libvirt.live_migration_uri % dest,
                                       { },
                                       logical_sum)
@@ -5418,7 +5419,15 @@ class LibvirtDriver(driver.ComputeDriver):
                 new_xml_str = self._correct_listen_addr(old_xml_str,
                                                         listen_addrs)
                 try:
-                    dom.migrateToURI2(CONF.libvirt.live_migration_uri % dest,
+                    if post_copy:
+                        LOG.debug("Post-copy live migration flag activated")
+                        dom.migrateToURI3(
+                                      CONF.libvirt.live_migration_uri % dest,
+                                      { },
+                                      logical_sum)
+                    else:
+                        dom.migrateToURI2(
+                                      CONF.libvirt.live_migration_uri % dest,
                                       None,
                                       new_xml_str,
                                       logical_sum,
