@@ -5405,7 +5405,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
                 if post_copy:
                     # Using migrateToURI3 for postcopy
-                    dom.migrateToURI3(CONF.libvirt.live_migrate_uri % dest,
+                    dom.migrateToURI3(CONF.libvirt.live_migration_uri % dest,
                                       { },
                                       logical_sum)
                 else:  
