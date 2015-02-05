@@ -169,7 +169,7 @@ libvirt_opts = [
                help='Migration flags to be set for post-copy live migration'),
     cfg.StrOpt('post_copy_block_migration_flag',
                default='VIR_MIGRATE_UNDEFINE_SOURCE, VIR_MIGRATE_PEER2PEER, '
-                       'VIR_MIGRATE_LIVE, VIR_MIGRATE_POSTCOPY_AFTER_PRECOPY '
+                       'VIR_MIGRATE_LIVE, VIR_MIGRATE_POSTCOPY_AFTER_PRECOPY, '
                        'VIR_MIGRATE_NON_SHARED_INC',
                help='Migration flags to be set for post-copy '
                     'block migration'),
