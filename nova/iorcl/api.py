@@ -58,14 +58,8 @@ class LocalComputeTaskAPI(object):
     def io_attach_volume(self, context, instance, volume_id):
         self._manager.io_attach_volume(context, instance, volume_id)
 
-    def io_detach_volume(self, context, instance, volume_id):
-        self._manager.io_detach_volume(context, instance, volume_id)
-
-    def io_attach_interface(self, context, instance, vif):
-        self._manager.io_attach_interface(context, instance, vif)
-
-    def io_detach_interface(self, context, instance, vif):
-        self._manager.io_detach_interface(context, instance, vif)
+    def io_detach_volume(self, context, instance, bdm):
+        self._manager.io_detach_volume(context, instance, bdm)
 
     def io_reset_guest(self, context, instance):
         self._manager.io_reset_guest(context, instance)
@@ -132,20 +126,10 @@ class ComputeTaskAPI(object):
                                                           instance,
                                                           volume_id)
 
-    def io_detach_volume(self, context, instance, volume_id):
+    def io_detach_volume(self, context, instance, bdm):
         return self.iorcl_compute_rpcapi.io_detach_volume(context,
                                                           instance,
-                                                          volume_id)
-
-    def io_attach_interface(self, context, instance, vif):
-        return self.iorcl_compute_rpcapi.io_attach_interface(context,
-                                                             instance,
-                                                             vif)
-
-    def io_detach_interface(self, context, instance, vif):
-        return self.iorcl_compute_rpcapi.io_detach_interface(context,
-                                                             instance,
-                                                             vif)
+                                                          bdm)
 
     def io_reset_guest(self, context, instance):
         return self.iorcl_compute_rpcapi.io_reset_guest(context,

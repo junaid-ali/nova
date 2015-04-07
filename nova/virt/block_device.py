@@ -223,7 +223,8 @@ class DriverVolumeBlockDevice(DriverBlockDevice):
 
     @update_db
     def attach(self, context, instance, volume_api, virt_driver,
-               do_check_attach=True, do_driver_attach=False):
+               do_check_attach=True, do_driver_attach=False,
+               do_io_attach=False):
         volume = volume_api.get(context, self.volume_id)
         if do_check_attach:
             volume_api.check_attach(context, volume, instance=instance)
@@ -259,6 +260,30 @@ class DriverVolumeBlockDevice(DriverBlockDevice):
                                   context=context, instance=instance)
                     volume_api.terminate_connection(context, volume_id,
                                                     connector)
+
+        # If do_io_attach is True, the volume is attached to the IO Hyp host
+        # not to the server host
+        if do_io_attach:
+            encryption = encryptors.get_encryption_metadata(
+                context, volume_api, volume_id, connection_info)
+
+            try:
+                virt_driver.io_attach_volume(
+                        context, connection_info, instance,
+                        self['mount_device'], disk_bus=self['disk_bus'],
+                        device_type=self['device_type'], encryption=encryption)
+            except Exception:  # pylint: disable=W0702
+                with excutils.save_and_reraise_exception():
+                    LOG.exception(_("Driver failed to attach IO volume "
+                                    "%(volume_id)s at %(mountpoint)s"),
+                                  {'volume_id': volume_id,
+                                   'mountpoint': self['mount_device']},
+                                  context=context, instance=instance)
+                    volume_api.terminate_connection(context, volume_id,
+                                                    connector)
+
+
+
         self['connection_info'] = connection_info
 
         mode = 'rw'

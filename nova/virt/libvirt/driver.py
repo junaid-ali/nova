@@ -1356,6 +1356,40 @@ class LibvirtDriver(driver.ComputeDriver):
                                                     **encryption)
         return encryptor
 
+    def io_attach_volume(self, context, connection_info, instance, mountpoint,
+                      disk_bus=None, device_type=None, encryption=None):
+        instance_name = instance['name']
+        disk_dev = mountpoint.rpartition("/")[2]
+        bdm = {
+            'device_name': disk_dev,
+            'disk_bus': disk_bus,
+            'device_type': device_type}
+
+        # Note(cfb): If the volume has a custom block size, check that
+        #            that we are using QEMU/KVM and libvirt >= 0.10.2. The
+        #            presence of a block size is considered mandatory by
+        #            cinder so we fail if we can't honor the request.
+        data = {}
+        if ('data' in connection_info):
+            data = connection_info['data']
+        if ('logical_block_size' in data or 'physical_block_size' in data):
+            if ((CONF.libvirt.virt_type != "kvm" and
+                 CONF.libvirt.virt_type != "qemu")):
+                msg = _("Volume sets block size, but the current "
+                        "libvirt hypervisor '%s' does not support custom "
+                        "block size") % CONF.libvirt.virt_type
+                raise exception.InvalidHypervisorType(msg)
+
+            if not self._has_min_version(MIN_LIBVIRT_BLOCKIO_VERSION):
+                ver = ".".join([str(x) for x in MIN_LIBVIRT_BLOCKIO_VERSION])
+                msg = _("Volume sets block size, but libvirt '%s' or later is "
+                        "required.") % ver
+                raise exception.Invalid(msg)
+
+        disk_info = blockinfo.get_info_from_bdm(CONF.libvirt.virt_type, bdm)
+        conf = self._connect_volume(connection_info, disk_info)
+        self._set_cache_mode(conf)
+
     def attach_volume(self, context, connection_info, instance, mountpoint,
                       disk_bus=None, device_type=None, encryption=None):
         instance_name = instance['name']
@@ -1515,6 +1549,11 @@ class LibvirtDriver(driver.ComputeDriver):
                                       instance, network_info, disk_info,
                                       block_device_info=block_device_info)
         return xml
+
+    def io_detach_volume(self, connection_info, instance, mountpoint,
+                      encryption=None):
+        disk_dev = mountpoint.rpartition("/")[2]
+        self._disconnect_volume(connection_info, disk_dev)
 
     def detach_volume(self, connection_info, instance, mountpoint,
                       encryption=None):

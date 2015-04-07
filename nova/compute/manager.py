@@ -1431,6 +1431,10 @@ class ComputeManager(manager.Manager):
                 instance.numa_topology = inst_claim.claimed_numa_topology
                 instance.save()
 
+                # information needed for doing the booting with volume
+                # through the IO Hypervisor
+                instanceInfo = instance
+
                 # Verify that all the BDMs have a device_name set and assign a
                 # default to the ones missing it with the help of the driver.
                 self._default_block_device_names(context, instance, image_meta,
@@ -1499,6 +1503,18 @@ class ComputeManager(manager.Manager):
             else:
                 # not re-scheduling, go to error:
                 raise exc_info[0], exc_info[1], exc_info[2]
+
+        # After VM has successfully spawn, add the IO volumes
+        # check if the instance has to use an I/O Hypervisor
+        system_metadata = utils.instance_sys_meta(instance)
+        is_instance_io = system_metadata.get('io_mode', None) == 'True'
+        if is_instance_io:
+            io_volumes = driver_block_device.convert_volumes(bdms)
+            for io_volume in io_volumes:
+                self.attach_volume(context,
+                                   io_volume.volume_id,
+                                   io_volume['mount_device'],
+                                   instanceInfo)
 
         # spawn success
         return instance, network_info
@@ -1807,31 +1823,42 @@ class ComputeManager(manager.Manager):
                            do_check_attach=True):
         """Set up the block device for an instance with error logging."""
         try:
-            block_device_info = {
-                'root_device_name': instance['root_device_name'],
-                'swap': driver_block_device.convert_swap(bdms),
-                'ephemerals': driver_block_device.convert_ephemerals(bdms),
-                'block_device_mapping': (
-                    driver_block_device.attach_block_devices(
-                        driver_block_device.convert_volumes(bdms),
-                        context, instance, self.volume_api,
-                        self.driver, do_check_attach=do_check_attach) +
-                    driver_block_device.attach_block_devices(
-                        driver_block_device.convert_snapshots(bdms),
-                        context, instance, self.volume_api,
-                        self.driver, self._await_block_device_map_created,
-                        do_check_attach=do_check_attach) +
-                    driver_block_device.attach_block_devices(
-                        driver_block_device.convert_images(bdms),
-                        context, instance, self.volume_api,
-                        self.driver, self._await_block_device_map_created,
-                        do_check_attach=do_check_attach) +
-                    driver_block_device.attach_block_devices(
-                        driver_block_device.convert_blanks(bdms),
-                        context, instance, self.volume_api,
-                        self.driver, self._await_block_device_map_created,
-                        do_check_attach=do_check_attach))
-            }
+            # check if the instance has to use an I/O Hypervisor
+            system_metadata = utils.instance_sys_meta(instance)
+            is_instance_io = system_metadata.get('io_mode', None) == 'True'
+            if is_instance_io:
+                block_device_info = {
+                    'root_device_name': instance['root_device_name'],
+                    'swap': driver_block_device.convert_swap(bdms),
+                    'ephemerals': driver_block_device.convert_ephemerals(bdms)
+                }
+
+            else:
+                block_device_info = {
+                    'root_device_name': instance['root_device_name'],
+                    'swap': driver_block_device.convert_swap(bdms),
+                    'ephemerals': driver_block_device.convert_ephemerals(bdms),
+                    'block_device_mapping': (
+                        driver_block_device.attach_block_devices(
+                            driver_block_device.convert_volumes(bdms),
+                            context, instance, self.volume_api,
+                            self.driver, do_check_attach=do_check_attach) +
+                        driver_block_device.attach_block_devices(
+                            driver_block_device.convert_snapshots(bdms),
+                            context, instance, self.volume_api,
+                            self.driver, self._await_block_device_map_created,
+                            do_check_attach=do_check_attach) +
+                        driver_block_device.attach_block_devices(
+                            driver_block_device.convert_images(bdms),
+                            context, instance, self.volume_api,
+                            self.driver, self._await_block_device_map_created,
+                            do_check_attach=do_check_attach) +
+                        driver_block_device.attach_block_devices(
+                            driver_block_device.convert_blanks(bdms),
+                            context, instance, self.volume_api,
+                            self.driver, self._await_block_device_map_created,
+                            do_check_attach=do_check_attach))
+                }
 
             if self.use_legacy_block_device_info:
                 for bdm_type in ('swap', 'ephemerals', 'block_device_mapping'):
@@ -4542,20 +4569,33 @@ class ComputeManager(manager.Manager):
     def attach_volume(self, context, volume_id, mountpoint,
                       instance, bdm=None):
         """Attach a volume to an instance."""
-        if not bdm:
-            bdm = objects.BlockDeviceMapping.get_by_volume_id(
-                    context, volume_id)
-        driver_bdm = driver_block_device.DriverVolumeBlockDevice(bdm)
+        # check if the instance has to use an I/O Hypervisor
+        system_metadata = utils.instance_sys_meta(instance)
+        is_instance_io = system_metadata.get('io_mode', None) == 'True'
+        if is_instance_io:
+            # call nova-iorcl (API)
+            info = self.compute_task_api.io_attach_volume(context, 
+                                                          instance, 
+                                                          volume_id)
+            self._notify_about_instance_usage(
+                context, instance, "volume.attach", extra_usage_info=info)
 
-        @utils.synchronized(instance.uuid)
-        def do_attach_volume(context, instance, driver_bdm):
-            try:
-                return self._attach_volume(context, instance, driver_bdm)
-            except Exception:
-                with excutils.save_and_reraise_exception():
-                    bdm.destroy(context)
+        else:
 
-        do_attach_volume(context, instance, driver_bdm)
+            if not bdm:
+                bdm = objects.BlockDeviceMapping.get_by_volume_id(
+                        context, volume_id)
+            driver_bdm = driver_block_device.DriverVolumeBlockDevice(bdm)
+
+            @utils.synchronized(instance.uuid)
+            def do_attach_volume(context, instance, driver_bdm):
+                try:
+                    return self._attach_volume(context, instance, driver_bdm)
+                except Exception:
+                    with excutils.save_and_reraise_exception():
+                        bdm.destroy(context)
+
+            do_attach_volume(context, instance, driver_bdm)
 
     def _attach_volume(self, context, instance, bdm):
         context = context.elevated()
@@ -4642,9 +4682,18 @@ class ComputeManager(manager.Manager):
                                                     instance,
                                                     update_totals=True)
 
-        self._detach_volume(context, instance, bdm)
-        connector = self.driver.get_volume_connector(instance)
-        self.volume_api.terminate_connection(context, volume_id, connector)
+        # check if the instance has to use an I/O Hypervisor
+        system_metadata = utils.instance_sys_meta(instance)
+        is_instance_io = system_metadata.get('io_mode', None) == 'True'
+        if is_instance_io:
+            self.compute_task_api.io_detach_volume(context,
+                                                   instance,
+                                                   bdm)
+        else:
+            self._detach_volume(context, instance, bdm)
+            connector = self.driver.get_volume_connector(instance)
+            self.volume_api.terminate_connection(context, volume_id, connector)
+
         bdm.destroy()
         info = dict(volume_id=volume_id)
         self._notify_about_instance_usage(

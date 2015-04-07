@@ -777,14 +777,8 @@ class ComputeTaskManager(base.Base):
     def io_attach_volume(self, context, instance, volume_id):
         self.iorcl_rpcapi.io_attach_volume(context, instance, volume_id)
 
-    def io_detach_volume(self, context, instance, volume_id):
-        self.iorcl_rpcapi.io_detach_volume(context, instance, volume_id)
-
-    def io_attach_interface(self, context, instance, vif):
-        self.iorcl_rpcapi.io_attach_interface(context, instance, vif)
-
-    def io_detach_interface(self, context, instance, vif):
-        self.iorcl_rpcapi.io_detach_interface(context, instance, vif)
+    def io_detach_volume(self, context, instance, bdm):
+        self.iorcl_rpcapi.io_detach_volume(context, instance, bdm)
 
     def io_reset_guest(self, context, instance):
         self.iorcl_rpcapi.io_reset_guest(context, instance)
