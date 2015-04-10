@@ -957,6 +957,10 @@ class LibvirtDriver(driver.ComputeDriver):
         for vif in network_info:
             self.vif_driver.plug(instance, vif)
 
+    def plug_io_vlan(self, vlan):
+        """Plug the I/O Hypervisor to the requested VLAN"""
+        self.vif_driver.plug_io_veth_to_vlan(vlan)
+
     def _unplug_vifs(self, instance, network_info, ignore_errors):
         """Unplug VIFs from networks."""
         for vif in network_info:
@@ -1355,6 +1359,10 @@ class LibvirtDriver(driver.ComputeDriver):
         encryptor = encryptors.get_volume_encryptor(connection_info,
                                                     **encryption)
         return encryptor
+
+    def create_io_vlan_connection(self, context, vlan):
+        self.plug_io_vlan(vlan)
+
 
     def io_attach_volume(self, context, connection_info, instance, mountpoint,
                       disk_bus=None, device_type=None, encryption=None):

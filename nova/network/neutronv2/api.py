@@ -1286,6 +1286,7 @@ class API(base_api.NetworkAPI):
             if port['network_id'] == net['id']:
                 network_name = net['name']
                 tenant_id = net['tenant_id']
+                vlan = net['provider:segmentation_id']
                 break
         else:
             tenant_id = port['tenant_id']
@@ -1323,7 +1324,8 @@ class API(base_api.NetworkAPI):
             bridge=bridge,
             injected=CONF.flat_injected,
             label=network_name,
-            tenant_id=tenant_id
+            tenant_id=tenant_id,
+            vlan=vlan
             )
         network['subnets'] = subnets
         port_profile = port.get('binding:profile')

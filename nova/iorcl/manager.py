@@ -154,9 +154,31 @@ class ComputeTaskManager(base.Base):
         #        + ioManager.py VM_MAC local_IF local_dev
         #        + NOTE: if vm in FT mode, ioManager should also attach the 
         #          block device to the secondary VM
+        ip = "ip-" +\
+            str(driver_bdm['connection_info']['data']['target_portal'])
 
+        iscsi = "iscsi-" +\
+            str(driver_bdm['connection_info']['data']['target_iqn'])
+
+        lun = "lun-" +\
+            str(driver_bdm['connection_info']['data']['target_lun'])
+
+        network_info = self.network_api.get_instance_nw_info(context, 
+                                                             instance)
+
+        instanceMAC= network_info[0]['address']
+        volume_mount_device = driver_bdm['mount_device']
+        volume_block_device = '/dev/disk/by-path/' +\
+                               ip + "-" + iscsi + "-" + lun
+        instanceVLAN = network_info[0]['network']['meta']['vlan']
+
+        self._create_connection_to_instance_vlan(context, instanceVLAN)
+        io_veth_name = "io-veth-" + str(instanceVLAN)
 
         return info
+
+    def _create_connection_to_instance_vlan(self, context, vlan):
+        self.driver.create_io_vlan_connection(context, vlan)
 
     def _attach_volume(self, context, instance, bdm):
         # NOTE (LTB): I still need to make some extra checking, such as:

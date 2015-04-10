@@ -40,8 +40,19 @@ libvirt_vif_opts = [
                 help='Use virtio for bridge interfaces with KVM/QEMU'),
 ]
 
+neutron_opts = [
+    # TODO(Luis Tomas) temporary hack until Neutron can pass over the
+    # name of the bridge mappings it is configured with
+    cfg.StrOpt('ovs_bridge_mappings',
+               default='br-enp4s0d1',
+               help='Name of bridge mappings used by Open vSwitch',
+               deprecated_group='DEFAULT')
+]
+
 CONF = cfg.CONF
 CONF.register_opts(libvirt_vif_opts, 'libvirt')
+# neutron_opts options in the DEFAULT group were deprecated in Juno
+CONF.register_opts(neutron_opts, 'neutron')
 CONF.import_opt('use_ipv6', 'nova.netconf')
 
 DEV_PREFIX_ETH = 'eth'
@@ -138,6 +149,9 @@ class LibvirtGenericVIFDriver(object):
     def get_bridge_name(self, vif):
         return vif['network']['bridge']
 
+    def get_ext_bridge_name(self):
+        return CONF.neutron.ovs_bridge_mappings
+
     def get_ovs_interfaceid(self, vif):
         return vif.get('ovs_interfaceid') or vif['id']
 
@@ -147,6 +161,10 @@ class LibvirtGenericVIFDriver(object):
     def get_veth_pair_names(self, iface_id):
         return (("qvb%s" % iface_id)[:network_model.NIC_NAME_LEN],
                 ("qvo%s" % iface_id)[:network_model.NIC_NAME_LEN])
+
+    def get_io_veth_pair_names(self, vlan):
+        return (("io-veth%s" % vlan),
+                ("io-vetho%s" % vlan))
 
     def get_firewall_required(self, vif):
         if vif.is_neutron_filtering_enabled():
@@ -541,6 +559,19 @@ class LibvirtGenericVIFDriver(object):
                 _("Plug vif failed because of unexpected "
                   "vif_type=%s") % vif_type)
         func(instance, vif)
+
+    def plug_io_veth_to_vlan(self, vlan):
+        """Plug the IO Hypervisor to the requested VLAN
+
+        Create the veth devices and connect it to the external ovs bridge
+        """
+        io_v1_name, io_v2_name = self.get_io_veth_pair_names(vlan)
+
+        if not linux_net.device_exists(io_v2_name):
+            linux_net._create_veth_pair(io_v1_name, io_v2_name)
+            linux_net.create_ovs_io_port(self.get_ext_bridge_name(),
+                                          io_v2_name, vlan)
+
 
     def unplug_bridge(self, instance, vif):
         """No manual unplugging required."""
