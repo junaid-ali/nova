@@ -992,7 +992,8 @@ class Controller(wsgi.Controller):
                 exception.FixedIpAlreadyInUse,
                 exception.SecurityGroupNotFound,
                 exception.InstanceUserDataTooLarge,
-                exception.InstanceUserDataMalformed) as error:
+                exception.InstanceUserDataMalformed,
+                exception.IORCLVolumeBootUnsupported) as error:
             raise exc.HTTPBadRequest(explanation=error.format_message())
         except (exception.ImageNUMATopologyIncomplete,
                 exception.ImageNUMATopologyForbidden,

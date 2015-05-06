@@ -1026,6 +1026,17 @@ class API(base.Base):
 
         return group
 
+    def _check_io_bdm_compatability(self, block_device_mapping, legacy_bdm):
+        for bdm in block_device_mapping:
+            if legacy_bdm:
+                volume_boot = block_device.get_device_letter(
+                    bdm.get('device_name', '')) == 'a'
+            else:
+                volume_boot = bdm.get('boot_index') == 0
+
+            if volume_boot:
+                raise exception.IORCLVolumeBootUnsupported()
+
     def _create_instance(self, context, instance_type,
                image_href, kernel_id, ramdisk_id,
                min_count, max_count,
@@ -1060,6 +1071,14 @@ class API(base.Base):
             image_id = None
             boot_meta = self._get_bdm_image_metadata(
                 context, block_device_mapping, legacy_bdm)
+
+            # Make sure that instances using the IO Hypervisor are not booting
+            # from a volume.
+            # TODO(ORBIT): Might trigger IO Hypervisor capabilities with
+            #              something other than the scheduler hints.
+            if 'io' in scheduler_hints:
+                self._check_io_bdm_compatability(block_device_mapping,
+                                                 legacy_bdm)
 
         self._check_auto_disk_config(image=boot_meta,
                                      auto_disk_config=auto_disk_config)

@@ -1759,3 +1759,8 @@ class InvalidHypervisorVirtType(Invalid):
 
 class InvalidVirtualMachineMode(Invalid):
     msg_fmt = _("Virtual machine mode '%(vmmode)s' is not recognised")
+
+
+class IORCLVolumeBootUnsupported(NovaException):
+    msg_fmt = _("Booting from volume is not possible for instances using the "
+                "IO Hypervisor.")
