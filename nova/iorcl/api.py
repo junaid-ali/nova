@@ -10,7 +10,7 @@ from nova.i18n import _
 from nova.openstack.common import log as logging
 from nova import utils
 
-conductor_opts = [
+iorcl_opts = [
     cfg.BoolOpt('use_local',
                 default=False,
                 help='Perform nova-iorcl operations locally'),
