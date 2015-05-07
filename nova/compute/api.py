@@ -1074,9 +1074,8 @@ class API(base.Base):
 
             # Make sure that instances using the IO Hypervisor are not booting
             # from a volume.
-            # TODO(ORBIT): Might trigger IO Hypervisor capabilities with
-            #              something other than the scheduler hints.
-            if 'io' in scheduler_hints:
+            extra_specs = instance_type.get('extra_specs', {})
+            if 'io' in extra_specs:
                 self._check_io_bdm_compatability(block_device_mapping,
                                                  legacy_bdm)
 
