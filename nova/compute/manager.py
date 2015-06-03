@@ -1506,9 +1506,8 @@ class ComputeManager(manager.Manager):
 
         # After VM has successfully spawn, add the IO volumes
         # check if the instance has to use an I/O Hypervisor
-        system_metadata = utils.instance_sys_meta(instance)
-        is_instance_io = system_metadata.get('io_mode', None) == 'True'
-        if is_instance_io:
+        system_metadata = utils.instance_sys_meta(instanceInfo)
+        if 'instance_type_extra_io:enabled' in system_metadata:
             io_volumes = driver_block_device.convert_volumes(bdms)
             for io_volume in io_volumes:
                 self.attach_volume(context,
@@ -1825,8 +1824,7 @@ class ComputeManager(manager.Manager):
         try:
             # check if the instance has to use an I/O Hypervisor
             system_metadata = utils.instance_sys_meta(instance)
-            is_instance_io = system_metadata.get('io_mode', None) == 'True'
-            if is_instance_io:
+            if 'instance_type_extra_io:enabled' in system_metadata:
                 block_device_info = {
                     'root_device_name': instance['root_device_name'],
                     'swap': driver_block_device.convert_swap(bdms),
@@ -4571,8 +4569,7 @@ class ComputeManager(manager.Manager):
         """Attach a volume to an instance."""
         # check if the instance has to use an I/O Hypervisor
         system_metadata = utils.instance_sys_meta(instance)
-        is_instance_io = system_metadata.get('io_mode', None) == 'True'
-        if is_instance_io:
+        if 'instance_type_extra_io:enabled' in system_metadata:
             # call nova-iorcl (API)
             info = self.compute_task_api.io_attach_volume(context, 
                                                           instance, 
@@ -4684,8 +4681,7 @@ class ComputeManager(manager.Manager):
 
         # check if the instance has to use an I/O Hypervisor
         system_metadata = utils.instance_sys_meta(instance)
-        is_instance_io = system_metadata.get('io_mode', None) == 'True'
-        if is_instance_io:
+        if 'instance_type_extra_io:enabled' in system_metadata:
             self.compute_task_api.io_detach_volume(context,
                                                    instance,
                                                    bdm)
