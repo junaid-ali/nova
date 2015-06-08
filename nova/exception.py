@@ -1759,3 +1759,16 @@ class InvalidHypervisorVirtType(Invalid):
 
 class InvalidVirtualMachineMode(Invalid):
     msg_fmt = _("Virtual machine mode '%(vmmode)s' is not recognised")
+
+
+class DROrchestratorInstanceNotActive(NovaException):
+    msg_fmt = _("The instance must be in ACTIVE status to be protected.")
+
+
+class DROrchestratorVolumeNotAvailable(NovaException):
+    msg_fmt = _("The volume must be in available status to be protected.")
+
+
+class DROrchestratorDatacenterNotFound(NovaException):
+    msg_fmt = _("No data to recover for the selected datacenter.")
+
