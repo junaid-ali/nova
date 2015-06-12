@@ -6,14 +6,12 @@ import itertools
 
 import six
 
-from nova.api.ec2 import ec2utils
 from nova import block_device
 from nova.compute import task_states
 from nova.compute import utils as compute_utils
 from nova.compute import vm_states
 from nova.conductor.tasks import live_migrate
 from nova import exception
-from nova.i18n import _
 from nova import image
 from nova import notifications
 from nova.objects import base as nova_object
@@ -31,10 +29,13 @@ from nova.db import base
 from nova import manager
 from nova import network
 from nova import volume
+from nova import utils
 from nova.compute import api as compute_api
 from nova.compute import rpcapi as compute_rpcapi
 from nova.network.security_group import openstack_driver
 from nova.cells import rpcapi as cells_rpcapi
+
+from nova.i18n import _
 
 from nova.objects import block_device as block_device_obj
 from nova.virt import block_device as driver_block_device
@@ -62,7 +63,7 @@ class IORCLManager(manager.Manager):
     namespace.  See the ComputeTaskManager class for details.
     """
 
-    target = messaging.Target(version='2.0')
+    target = messaging.Target(version='1.0')
 
     def __init__(self, *args, **kwargs):
         super(IORCLManager, self).__init__(service_name='iorcl',
@@ -118,7 +119,7 @@ class ComputeTaskManager(base.Base):
     may involve coordinating activities on multiple compute nodes.
     """
 
-    target = messaging.Target(namespace='compute_task', version='1.9')
+    target = messaging.Target(namespace='compute_task', version='1.0')
 
     def __init__(self, compute_driver=None):
         super(ComputeTaskManager, self).__init__()
@@ -139,12 +140,12 @@ class ComputeTaskManager(base.Base):
         @utils.synchronized(instance.uuid)
         def do_attach_volume(context, instance, driver_bdm):
             try:
-                info = self._attach_volume(context, instance, driver_bdm)
+                return self._attach_volume(context, instance, driver_bdm)
             except Exception:
                 with excutils.save_and_reraise_exception():
                     bdm.destroy(context)
 
-        do_attach_volume(context, instance, driver_bdm)
+        info = do_attach_volume(context, instance, driver_bdm)
 
         # At this point, the volume is mounted in the local host, but
         # not linked to the VM
@@ -173,8 +174,16 @@ class ComputeTaskManager(base.Base):
         instanceVLAN = network_info[0]['network']['meta']['vlan']
 
         self._create_connection_to_instance_vlan(context, instanceVLAN)
-        io_veth_name = "io-veth-" + str(instanceVLAN)
+        io_veth_name = "io-veth" + str(instanceVLAN)
 
+        context = context.elevated()
+        LOG.audit(_('IOHyp links %(volume_id)s to instance %(mac)s '
+                  'at %(mountpoint)s through %(interface)s'),
+                  {'volume_id': volume_block_device,
+                  'mac': instanceMAC,
+                  'mountpoint': volume_mount_device,
+                  'interface': io_veth_name},
+                  context=context, instance=instance)
         return info
 
     def _create_connection_to_instance_vlan(self, context, vlan):

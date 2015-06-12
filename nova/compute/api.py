@@ -1075,7 +1075,7 @@ class API(base.Base):
             # Make sure that instances using the IO Hypervisor are not booting
             # from a volume.
             extra_specs = instance_type.get('extra_specs', {})
-            if 'io' in extra_specs:
+            if 'io:enabled' in extra_specs:
                 self._check_io_bdm_compatability(block_device_mapping,
                                                  legacy_bdm)
 

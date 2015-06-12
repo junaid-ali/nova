@@ -1431,10 +1431,6 @@ class ComputeManager(manager.Manager):
                 instance.numa_topology = inst_claim.claimed_numa_topology
                 instance.save()
 
-                # information needed for doing the booting with volume
-                # through the IO Hypervisor
-                instanceInfo = instance
-
                 # Verify that all the BDMs have a device_name set and assign a
                 # default to the ones missing it with the help of the driver.
                 self._default_block_device_names(context, instance, image_meta,
@@ -1503,18 +1499,6 @@ class ComputeManager(manager.Manager):
             else:
                 # not re-scheduling, go to error:
                 raise exc_info[0], exc_info[1], exc_info[2]
-
-        # After VM has successfully spawn, add the IO volumes
-        # check if the instance has to use an I/O Hypervisor
-        system_metadata = utils.instance_sys_meta(instance)
-        is_instance_io = system_metadata.get('io_mode', None) == 'True'
-        if is_instance_io:
-            io_volumes = driver_block_device.convert_volumes(bdms)
-            for io_volume in io_volumes:
-                self.attach_volume(context,
-                                   io_volume.volume_id,
-                                   io_volume['mount_device'],
-                                   instanceInfo)
 
         # spawn success
         return instance, network_info
@@ -1825,8 +1809,7 @@ class ComputeManager(manager.Manager):
         try:
             # check if the instance has to use an I/O Hypervisor
             system_metadata = utils.instance_sys_meta(instance)
-            is_instance_io = system_metadata.get('io_mode', None) == 'True'
-            if is_instance_io:
+            if 'instance_type_extra_io:enabled' in system_metadata:
                 block_device_info = {
                     'root_device_name': instance['root_device_name'],
                     'swap': driver_block_device.convert_swap(bdms),
@@ -2215,6 +2198,20 @@ class ComputeManager(manager.Manager):
         self._notify_about_instance_usage(context, instance, 'create.end',
                 extra_usage_info={'message': _('Success')},
                 network_info=network_info)
+
+        # After VM has successfully spawn, add the IO volumes
+        # check if the instance has to use an I/O Hypervisor
+        system_metadata = utils.instance_sys_meta(instance)
+        if 'instance_type_extra_io:enabled' in system_metadata:
+            bdms = objects.BlockDeviceMappingList.get_by_instance_uuid(
+                                                      context, instance.uuid)
+            io_volumes = driver_block_device.convert_volumes(bdms)
+            for io_volume in io_volumes:
+                self.attach_volume(context,
+                                   io_volume.volume_id,
+                                   io_volume['mount_device'],
+                                   instance)
+
 
     @contextlib.contextmanager
     def _build_resources(self, context, instance, requested_networks,
@@ -4579,8 +4576,7 @@ class ComputeManager(manager.Manager):
         """Attach a volume to an instance."""
         # check if the instance has to use an I/O Hypervisor
         system_metadata = utils.instance_sys_meta(instance)
-        is_instance_io = system_metadata.get('io_mode', None) == 'True'
-        if is_instance_io:
+        if 'instance_type_extra_io:enabled' in system_metadata:
             # call nova-iorcl (API)
             info = self.compute_task_api.io_attach_volume(context, 
                                                           instance, 
@@ -4692,8 +4688,7 @@ class ComputeManager(manager.Manager):
 
         # check if the instance has to use an I/O Hypervisor
         system_metadata = utils.instance_sys_meta(instance)
-        is_instance_io = system_metadata.get('io_mode', None) == 'True'
-        if is_instance_io:
+        if 'instance_type_extra_io:enabled' in system_metadata:
             self.compute_task_api.io_detach_volume(context,
                                                    instance,
                                                    bdm)

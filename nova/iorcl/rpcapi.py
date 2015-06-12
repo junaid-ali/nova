@@ -28,12 +28,12 @@ class IORCLAPI(object):
     """
 
     VERSION_ALIASES = {
-        'juno': '2.0',
+        'juno': '1.0',
     }
 
     def __init__(self):
         super(IORCLAPI, self).__init__()
-        target = messaging.Target(topic=CONF.iorcl.topic, version='2.0')
+        target = messaging.Target(topic=CONF.iorcl.topic, version='1.0')
         version_cap = self.VERSION_ALIASES.get(CONF.upgrade_levels.iorcl,
                                                CONF.upgrade_levels.iorcl)
         serializer = objects_base.NovaObjectSerializer()
@@ -60,17 +60,17 @@ class ComputeTaskAPI(object):
         self.client = rpc.get_client(target, serializer=serializer)
 
     def io_attach_volume(self, context, instance, volume_id):
-        cctxt = self.client.prepare(version='2.0')
+        cctxt = self.client.prepare(version='1.0')
         return cctxt.cast(context, 'io_attach_volume',
                           instance=instance, volume_id=volume_id)
 
     def io_detach_volume(self, context, instance, bdm):
-        cctxt = self.client.prepare(version='2.0')
+        cctxt = self.client.prepare(version='1.0')
         return cctxt.cast(context, 'io_detach_volume',
                           instance=instance, bdm=bdm)
 
     def io_reset_guest(self, context, instance):
-        cctxt = self.client.prepare(version='2.0')
+        cctxt = self.client.prepare(version='1.0')
         return cctxt.cast(context, 'io_reset_guest', instance=instance)
 
 
