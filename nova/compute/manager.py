@@ -2426,12 +2426,20 @@ class ComputeManager(manager.Manager):
 
         for bdm in vol_bdms:
             try:
-                # NOTE(vish): actual driver detach done in driver.destroy, so
-                #             just tell cinder that we are done with it.
-                connector = self.driver.get_volume_connector(instance)
-                self.volume_api.terminate_connection(context,
-                                                     bdm.volume_id,
-                                                     connector)
+                # check if the instance has to use an I/O Hypervisor
+                system_metadata = utils.instance_sys_meta(instance)
+                if 'instance_type_extra_io:enabled' in system_metadata:
+                    self.compute_task_api.io_detach_volume(context,
+                                                           instance,
+                                                           bdm)
+                else:
+                    # NOTE(vish): actual driver detach done in driver.destroy,
+                    # so just tell cinder that we are done with it.
+                    connector = self.driver.get_volume_connector(instance)
+                    self.volume_api.terminate_connection(context,
+                                                         bdm.volume_id,
+                                                         connector)
+
                 self.volume_api.detach(context, bdm.volume_id)
             except exception.DiskNotFound as exc:
                 LOG.debug('Ignoring DiskNotFound: %s', exc,
