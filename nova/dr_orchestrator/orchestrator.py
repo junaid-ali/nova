@@ -29,6 +29,9 @@ interval_opts = [
     cfg.IntOpt('drlogic_interval',
                default=30,
                help='Interval for the DR-Logic optimization control loop.'),
+    cfg.IntOpt('max_protection_interval',
+               default=30,
+               help='Maximum interval between protecting actions.'),
 ]
 
 dr_opts = [
@@ -86,6 +89,10 @@ class OrchestratorManager(manager.Manager):
         self.dragon_api = dragon.API()
 
         self.logic_api = logic.Logic()
+
+        self._default_loops_to_protect= int((60.0 / CONF.drlogic_interval) * \
+                                             CONF.max_protection_interval)
+        self._loops_to_protect = self._default_loops_to_protect
 
 
     def ping(self, context, arg):
@@ -179,8 +186,12 @@ class OrchestratorManager(manager.Manager):
             self._add_resources(context, resources_to_include)
 
         """Protect the workload policy based on DR-Logic decision ."""
-        if triggerProtect:
+        if triggerProtect or self._loops_to_protect == 0:
             self._dr_protect(context, self._policy_id)
+            self._loops_to_protect = self._default_loops_to_protect
+        else:
+            self._loops_to_protect -= 1
+
 
 
     def _add_resources(self, context, resources_to_protect):
