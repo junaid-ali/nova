@@ -11,6 +11,7 @@ from nova.network.security_group import openstack_driver
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
 from nova.openstack.common import periodic_task
+from nova import exception
 
 from nova import context as ctxt
 
@@ -31,7 +32,7 @@ interval_opts = [
                help='Interval for the DR-Logic optimization control loop.'),
     cfg.IntOpt('max_protection_interval',
                default=30,
-               help='Maximum interval between protecting actions.'),
+               help='Maximum interval between protecting actions (minutes).'),
 ]
 
 dr_opts = [
@@ -92,7 +93,7 @@ class OrchestratorManager(manager.Manager):
 
         self._default_loops_to_protect= int((60.0 / CONF.drlogic_interval) * \
                                              CONF.max_protection_interval)
-        self._loops_to_protect = self._default_loops_to_protect
+        self._loops_to_protect = 5
 
 
     def ping(self, context, arg):
@@ -178,8 +179,8 @@ class OrchestratorManager(manager.Manager):
                                           context, 
                                           self._resources_to_protect)
     
-        LOG.debug("TriggerProtect has: %s", triggerProtect)
-        LOG.debug("And resources_to_include has %s", resources_to_include)
+        LOG.debug("Protect need to be triggered: %s", triggerProtect)
+        LOG.debug("Resources to be included are: %s", resources_to_include)
 
         """Include the selected resources in the workload policy."""
         if resources_to_include:
@@ -278,6 +279,8 @@ class OrchestratorManager(manager.Manager):
                         'id': instance['uuid'],
                         'resource_type_id': CONF.dr_instance}
                     self._resources_to_protect.append(resource_info)
+                else:
+                    raise exception.DROrchestratorInstanceNotActive()
 
             elif resource_type == "Volume":
                 volume = self.volume_api.get(context, resource_id)
@@ -291,13 +294,16 @@ class OrchestratorManager(manager.Manager):
                         'resource_type_id': CONF.dr_volume}
 
                     self._resources_to_protect.append(resource_info)
-                
+                else:
+                    raise exception.DROrchestratorVolumeNotAvailable()
             else:
                 LOG.debug("Resource type unknown or not supported.")
+                raise exception.DROrchestratorUnknownResourceType()
 
         else:
             LOG.debug("There is no network capacity to protect more "
                       "VMs/Volumes.")
+            raise exception.DROrchestratorNoNetworkCapacity()
         
 
     # API offered to fault detection (FT) 

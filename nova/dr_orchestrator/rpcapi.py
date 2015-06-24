@@ -44,10 +44,9 @@ class OrchestratorAPI(object):
                                      serializer=serializer)
 
 
-    # just an example for later
     def protect(self, context, resource_id, resource_type):
         cctxt = self.client.prepare(version='2.0')
-        return cctxt.cast(context, 'protect',
+        return cctxt.call(context, 'protect',
                           resource_id=resource_id,
                           resource_type=resource_type)
 

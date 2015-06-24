@@ -78,13 +78,13 @@ class API(object):
                               'nova-iorcl connection...'))
 
     def protect(self, context, resource_id, resource_type):
-        """Calls recover RCPI call. 
+        """Calls protect RPC call. 
         """
         self._orchestrator.protect(context, resource_id, resource_type)
 
 
     def recover(self, context, datacenter):
-        """Calls recover RCPI call. 
+        """Calls recover RPC call. 
         """
         self._orchestrator.recover(context, datacenter)
 

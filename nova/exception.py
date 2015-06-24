@@ -1772,3 +1772,12 @@ class DROrchestratorVolumeNotAvailable(NovaException):
 class DROrchestratorDatacenterNotFound(NovaException):
     msg_fmt = _("No data to recover for the selected datacenter.")
 
+
+class DROrchestratorNoNetworkCapacity(NovaException):
+    msg_fmt = _("Not enough capacity to protect more resources.")
+
+
+class DROrchestratorUnknownResourceType(NovaException):
+    msg_fmt = _("Resource type is unknown.")
+
+

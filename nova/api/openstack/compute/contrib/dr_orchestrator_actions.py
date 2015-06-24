@@ -32,8 +32,15 @@ class DROrchestratorProtectController(wsgi.Controller):
 
         try:
             self.dr_orchestrator_api.protect(context, id, "Instance")
+        except exception.InstanceNotFound:
+            msg = _("Server not found")
+            raise exc.HTTPNotFound(explanation=msg)
         except exception.DROrchestrationInstanceNotActive as e:
+            raise exc.HTTPConflict(explanation=e.format_message())
+        except exception.DROrchestrationUnknownResourceType as e:
             raise exc.HTTPBadRequest(explanation=e.format_message())
+        except exception.DROrchestrationNoNetworkCapacity as e:
+            raise exc.HTTPForbidden(explanation=e.format_message())
 
         return webob.Response(status_int=202)
 
@@ -46,8 +53,14 @@ class DROrchestratorProtectController(wsgi.Controller):
 
         try:
             self.dr_orchestrator_api.protect(context, id, "Volume")
+        except exception.NotFound as e:
+            raise exc.HTTPNotFound(explanation=e.format_message())
         except exception.DROrchestrationVolumeNotAvailable as e:
+            raise exc.HTTPConflict(explanation=e.format_message())
+        except exception.DROrchestrationUnknownResourceType as e:
             raise exc.HTTPBadRequest(explanation=e.format_message())
+        except exception.DROrchestrationNoNetworkCapacity as e:
+            raise exc.HTTPForbidden(explanation=e.format_message())
 
         return webob.Response(status_int=202)
 
