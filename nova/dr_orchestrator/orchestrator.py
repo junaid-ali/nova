@@ -50,9 +50,9 @@ dr_opts = [
     cfg.StrOpt('dr_default_instance_action',
                default="Image Copy",
                help='Default replication action for instances.'),
-    cfg.StrOpt('dr_default_volume_action',
-               default="Volume Replication",
-               help='Default replication action for volumes.'),
+#    cfg.StrOpt('dr_default_volume_action',
+#               default="Volume Replication",
+#               help='Default replication action for volumes.'),
 ]
 
 CONF = cfg.CONF
@@ -84,6 +84,7 @@ class OrchestratorManager(manager.Manager):
 
         self._default_instance_replication_action = None
         self._default_volume_replication_action = None
+        self._default_volume_snapshot_action = None
 
         self.volume_api = volume.API()
         self.nova_api = compute.API()
@@ -111,10 +112,15 @@ class OrchestratorManager(manager.Manager):
                 if policy["name"] == CONF.dr_default_instance_action:
                     return policy["id"]
         if resource_type == "Volume":
+            replication_id = None
+            snapshot_id = None
             for policy in self.dragon_api.list_actions(context, 
                                                        resource_type_id):
-                if policy["name"] == CONF.dr_default_volume_action:
-                    return policy["id"]
+                if policy["name"] == "Volume Replication":
+                    replication_id = policy["id"]
+                elif policy["name"] == "Volume Snapshot":
+                    snapshot_id = policy["id"]
+            return replication_id, snapshot_id
         return None
 
 
@@ -164,7 +170,8 @@ class OrchestratorManager(manager.Manager):
                                   context,
                                   CONF.dr_instance,
                                   resource_type="Instance")
-            self._default_volume_replication_action = \
+            (self._default_volume_replication_action, 
+                self._default_volume_snapshot_action) = \
                          self._get_default_replication_action(
                                   context,
                                   CONF.dr_volume,
@@ -212,11 +219,18 @@ class OrchestratorManager(manager.Manager):
                          self._policy_id)
 
             elif resource["resource_type_id"] == CONF.dr_volume:
-                self.dragon_api.create_resource_action(
-                         context,
-                         resource["id"],
-                         self._default_volume_replication_action,
-                         self._policy_id)
+                if resource['volume_type'] == 'drbddriver-1':  
+                    self.dragon_api.create_resource_action(
+                             context,
+                             resource["id"],
+                             self._default_volume_replication_action,
+                             self._policy_id)
+                else:
+                    self.dragon_api.create_resource_action(
+                             context,
+                             resource["id"],
+                             self._default_volume_snapshot_action,
+                             self._policy_id)
 
             else:
                 LOG.debug("Not protecting resource %s." 
@@ -291,7 +305,8 @@ class OrchestratorManager(manager.Manager):
                                                     CONF.dr_volume)
                     resource_info = {
                         'id': volume['id'],
-                        'resource_type_id': CONF.dr_volume}
+                        'resource_type_id': CONF.dr_volume,
+                        'volume_type': volume['volume_type_id']}
 
                     self._resources_to_protect.append(resource_info)
                 else:
