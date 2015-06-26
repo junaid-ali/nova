@@ -345,13 +345,11 @@ class OrchestratorManager(manager.Manager):
         """ Recover all the VMs/Volumes protected in DC: datacenter.
         """
         LOG.debug("Recovering datacenter: %s", datacenter)
-        """
+
         for policy in self._get_policies_for_datacenter(datacenter):
             container_to_recover = \
                   self.dragon_api.recovery_list_policy_executions(context,
                                                                   policy)
             self.dragon_api.recover(context, container_to_recover[0]["id"])
-        """
-
 
 
