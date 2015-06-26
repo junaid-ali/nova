@@ -30,6 +30,9 @@ interval_opts = [
     cfg.IntOpt('drlogic_interval',
                default=30,
                help='Interval for the DR-Logic optimization control loop.'),
+    cfg.IntOpt('drlogic_clean_up_interval',
+               default=3600,
+               help='Interval for data protection clean up.'),
     cfg.IntOpt('max_protection_interval',
                default=30,
                help='Maximum interval between protecting actions (minutes).'),
@@ -150,6 +153,20 @@ class OrchestratorManager(manager.Manager):
                 self._policy_id = workload_policies["id"]
                 return True
         return False
+
+
+    @periodic_task.periodic_task(spacing=CONF.drlogic_clean_up_interval,
+                                 run_immediately=True)
+    def dr_cleanup(self, context):
+        LOG.debug("Cleaning up old protection data.")
+        policies = self.dragon_api.recovery_list_policies(context)
+        for policy in policies:
+            executions = self.dragon_api.recovery_list_policy_executions(context, policy['id'])
+            for execution in executions[1:]:
+                LOG.debug("Deleting container wit id: %s", execution['id'])
+                self.dragon_api.delete_policy_execution(context, execution['id'])
+
+
 
 
     @periodic_task.periodic_task(spacing=CONF.drlogic_interval,
