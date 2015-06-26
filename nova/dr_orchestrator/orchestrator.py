@@ -62,6 +62,8 @@ CONF = cfg.CONF
 CONF.register_opts(interval_opts)
 CONF.register_opts(dr_opts)
 
+PROTECTABLE_STATES = ("available","in-use")
+
 
 class OrchestratorManager(manager.Manager):
     """Mission: DR-Orchestration actions and optimization logic.
@@ -315,7 +317,7 @@ class OrchestratorManager(manager.Manager):
 
             elif resource_type == "Volume":
                 volume = self.volume_api.get(context, resource_id)
-                if volume['status'] == "available":
+                if volume['status'] in PROTECTABLE_STATES:
                     self.dragon_api.create_resource(context,
                                                     volume['id'],
                                                     volume['display_name'],
