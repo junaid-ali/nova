@@ -155,35 +155,42 @@ class ComputeTaskManager(base.Base):
         #        + ioManager.py VM_MAC local_IF local_dev
         #        + NOTE: if vm in FT mode, ioManager should also attach the 
         #          block device to the secondary VM
-        ip = "ip-" +\
-            str(driver_bdm['connection_info']['data']['target_portal'])
-
-        iscsi = "iscsi-" +\
-            str(driver_bdm['connection_info']['data']['target_iqn'])
-
-        lun = "lun-" +\
-            str(driver_bdm['connection_info']['data']['target_lun'])
-
         network_info = self.network_api.get_instance_nw_info(context, 
                                                              instance)
 
         instanceMAC= network_info[0]['address']
-        volume_mount_device = driver_bdm['mount_device']
-        volume_block_device = '/dev/disk/by-path/' +\
-                               ip + "-" + iscsi + "-" + lun
+        instanceIP = ( 
+            network_info[0]['network']['subnets'][0]['ips'][0]['address'])
         instanceVLAN = network_info[0]['network']['meta']['vlan']
 
+        volume_mount_device = driver_bdm['mount_device'][5:]
+        volume_block_device = (
+            driver_bdm['connection_info']['data']['host_device'])
+ 
         self._create_connection_to_instance_vlan(context, instanceVLAN)
         io_veth_name = "io-veth" + str(instanceVLAN)
 
         context = context.elevated()
-        LOG.audit(_('IOHyp links %(volume_id)s to instance %(mac)s '
-                  'at %(mountpoint)s through %(interface)s'),
-                  {'volume_id': volume_block_device,
-                  'mac': instanceMAC,
+
+        LOG.audit(_('Calling the IO Hyp. with: '
+                  'iohyp_create_blk_device.sh -i %(veth_device)s '
+                  '-p %(volume_id)s -w %(mountpoint)s '
+                  '-g %(mac)s -t %(ip)s'),
+                  {'veth_device': io_veth_name,
+                  'volume_id': volume_block_device,
                   'mountpoint': volume_mount_device,
-                  'interface': io_veth_name},
+                  'mac': instanceMAC,
+                  'ip': instanceIP},
                   context=context, instance=instance)
+
+        args = ['-i', str(io_veth_name),
+                '-p', str(volume_block_device),
+                '-w', str(volume_mount_device),
+                '-g', str(instanceMAC),
+                '-t', str(instanceIP)]
+        full_args = ['iohyp_create_blk_device.sh'] + args
+        utils.execute(*full_args, run_as_root=True)
+
         return info
 
     def _create_connection_to_instance_vlan(self, context, vlan):
@@ -248,6 +255,18 @@ class ComputeTaskManager(base.Base):
                   context=context, instance=instance)
 
         connection_info = jsonutils.loads(bdm.connection_info)
+ 
+        # IO Hyp. calls
+        LOG.audit(_('Calling the IO Hyp. with: '
+                  'iohyp_remove_blk_device.sh -p %(volume_id)s'),
+                  {'volume_id': connection_info['data']['host_device']},
+                  context=context, instance=instance)
+
+        args = ['-p', str(connection_info['data']['host_device'])]
+        full_args = ['iohyp_remove_blk_device.sh'] + args
+        utils.execute(*full_args, run_as_root=True)
+
+
         # NOTE(vish): We currently don't use the serial when disconnecting,
         #             but added for completeness in case we ever do.
         if connection_info and 'serial' not in connection_info:
