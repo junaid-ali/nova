@@ -4965,6 +4965,12 @@ class ComputeManager(manager.Manager):
         block_device_info = self._get_instance_block_device_info(
                             context, instance, refresh_conn_info=True)
 
+        system_metadata = utils.instance_sys_meta(instance)
+        if 'instance_type_extra_io:enabled' in system_metadata:
+            LOG.warn(_('No need to define the volumes'), instance=instance)
+            block_device_info = None
+
+
         network_info = self._get_instance_nw_info(context, instance)
         self._notify_about_instance_usage(
                      context, instance, "live_migration.pre.start",
@@ -5228,6 +5234,11 @@ class ComputeManager(manager.Manager):
                      network_info=network_info)
         block_device_info = self._get_instance_block_device_info(context,
                                                                  instance)
+
+        system_metadata = utils.instance_sys_meta(instance)
+        if 'instance_type_extra_io:enabled' in system_metadata:
+            LOG.warn(_('No need to define the volumes'), instance=instance)
+            block_device_info = None
 
         self.driver.post_live_migration_at_destination(context, instance,
                                             network_info,
