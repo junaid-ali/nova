@@ -22,6 +22,8 @@ from nova.scheduler import driver as scheduler_driver
 from nova.scheduler import utils as scheduler_utils
 '''
 
+import time
+
 from oslo import messaging
 
 from nova.db import base
@@ -159,19 +161,18 @@ class ComputeTaskManager(base.Base):
                                                              instance)
 
         instanceMAC= network_info[0]['address']
-        instanceIP = ( 
+        instanceIP = (
             network_info[0]['network']['subnets'][0]['ips'][0]['address'])
-        instanceVLAN = network_info[0]['network']['meta']['vlan']
 
         volume_mount_device = driver_bdm['mount_device'][5:]
-        volume_block_device = (
-            driver_bdm['connection_info']['data']['host_device'])
- 
+        volume_block_device = driver_bdm['connection_info']['data']['host_device']
+        instanceVLAN = network_info[0]['network']['meta']['vlan']
+
         self._create_connection_to_instance_vlan(context, instanceVLAN)
         io_veth_name = "io-veth" + str(instanceVLAN)
 
         context = context.elevated()
-
+       
         LOG.audit(_('Calling the IO Hyp. with: '
                   'iohyp_create_blk_device.sh -i %(veth_device)s '
                   '-p %(volume_id)s -w %(mountpoint)s '
@@ -190,6 +191,7 @@ class ComputeTaskManager(base.Base):
                 '-t', str(instanceIP)]
         full_args = ['iohyp_create_blk_device.sh'] + args
         utils.execute(*full_args, run_as_root=True)
+
 
         return info
 
@@ -255,17 +257,22 @@ class ComputeTaskManager(base.Base):
                   context=context, instance=instance)
 
         connection_info = jsonutils.loads(bdm.connection_info)
- 
-        # IO Hyp. calls
+
+        # LTB: QUICK FIX TO BE REMOVED
+        volume_connection = "/dev/disk/by-path/ip-192.168.26.1:3260-iscsi-iqn.2010-10.org.openstack:volume-" + str(volume_id) + "-lun-0"
+
         LOG.audit(_('Calling the IO Hyp. with: '
                   'iohyp_remove_blk_device.sh -p %(volume_id)s'),
-                  {'volume_id': connection_info['data']['host_device']},
+                  #{'volume_id': connection_info['data']['host_device']},
+                  {'volume_id': volume_connection},
                   context=context, instance=instance)
 
-        args = ['-p', str(connection_info['data']['host_device'])]
+        #args = ['-p', str(connection_info['data']['host_device'])]
+        args = ['-p', str(volume_connection)]
         full_args = ['iohyp_remove_blk_device.sh'] + args
         utils.execute(*full_args, run_as_root=True)
 
+        time.sleep(3.0)
 
         # NOTE(vish): We currently don't use the serial when disconnecting,
         #             but added for completeness in case we ever do.
