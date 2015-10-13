@@ -163,10 +163,10 @@ class ComputeTaskManager(base.Base):
         instanceMAC= network_info[0]['address']
         instanceIP = (
             network_info[0]['network']['subnets'][0]['ips'][0]['address'])
+        instanceVLAN = network_info[0]['network']['meta']['vlan']
 
         volume_mount_device = driver_bdm['mount_device'][5:]
         volume_block_device = driver_bdm['connection_info']['data']['host_device']
-        instanceVLAN = network_info[0]['network']['meta']['vlan']
 
         self._create_connection_to_instance_vlan(context, instanceVLAN)
         io_veth_name = "io-veth" + str(instanceVLAN)
