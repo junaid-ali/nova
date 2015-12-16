@@ -27,8 +27,6 @@ from nova.openstack.common import log as logging
 from nova.openstack.common import timeutils
 from nova import utils
 
-from nova.dr_orchestrator import dragon
-
 LOG = logging.getLogger(__name__)
 
 
@@ -55,7 +53,6 @@ class ViewBuilder(common.ViewBuilder):
         self._address_builder = views_addresses.ViewBuilder()
         self._flavor_builder = views_flavors.ViewBuilder()
         self._image_builder = views_images.ViewBuilder()
-        self._dragon_api = dragon.API()
 
     def create(self, request, instance):
         """View that should be returned when an instance is created."""
@@ -103,7 +100,6 @@ class ViewBuilder(common.ViewBuilder):
                 "links": self._get_links(request,
                                          instance["uuid"],
                                          self._collection_name),
-                "dr_protection": self._get_dr_status(request, instance),
             },
         }
         if server["server"]["status"] in self._fault_statuses:
@@ -235,33 +231,6 @@ class ViewBuilder(common.ViewBuilder):
                 fault_dict['details'] = fault["details"]
 
         return fault_dict
-
-
-    def _get_dr_status(self, request, instance):
-        if (self._dragon_api.get_resource(request, instance['uuid']) 
-                                                               is not None):
-            workload_policy_id = None
-            for workload_policy in self._dragon_api.list_workload_policies(
-                                                        request):
-                if (workload_policy['tenant_id'] 
-                        == str(instance.get("project_id"))):
-                    workload_policy_id = workload_policy['id']
-                    break
-            action = self._dragon_api.get_resource_action(
-                                                  request,
-                                                  workload_policy_id,
-                                                  instance['uuid'])
-            if action:
-                policy_executions = self._dragon_api.list_policy_executions(
-                                                         request,
-                                                         workload_policy_id)
-                if (policy_executions and
-                                        action[0]['created_at'] <
-                                        policy_executions[0]['created_at']):
-                    return "Protected"
-                return "Protecting"
-            return "Protection Scheduled"
-        return "UnProtected"
 
 
 class ViewBuilderV3(ViewBuilder):
