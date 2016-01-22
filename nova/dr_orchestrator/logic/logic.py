@@ -6,7 +6,7 @@ from nova.openstack.common import importutils
 logic_driver_opts = [
     cfg.StrOpt('logic_driver',
             default='nova.dr_orchestrator.logic.dummy_logic.DummyLogic',
-            help='Default drivar to use for the logic optimization.'),
+            help='Default driver to use for the logic optimization.'),
 ]
 
 CONF = cfg.CONF
