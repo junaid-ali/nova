@@ -79,27 +79,30 @@ class DROrchestratorProtectController(wsgi.Controller):
     #    return status
 
     def _get_dr_state(self, req, server):
-        if (self.dragon_api.get_resource(req, server['id']) is not None):
-            workload_policy_id = None
-            for workload_policy in self.dragon_api.list_workload_policies(
-                                                        req):
-                if (workload_policy['tenant_id']
-                        == str(server["tenant_id"])):
-                    workload_policy_id = workload_policy['id']
-                    break
-            action = self.dragon_api.get_resource_action(
-                                                  req,
-                                                  workload_policy_id,
-                                                  server['id'])
-            if action:
-                policy_executions = self.dragon_api.list_policy_executions(
-                                                         req,
-                                                         workload_policy_id)
-                if (policy_executions and
-                                        action[0]['created_at'] <
-                                        policy_executions[0]['created_at']):
-                    return "Protected"
-            return "Protection scheduled"
+        try:
+            if (self.dragon_api.get_resource(req, server['id']) is not None):
+                workload_policy_id = None
+                for workload_policy in self.dragon_api.list_workload_policies(
+                                                            req):
+                    if (workload_policy['tenant_id']
+                            == str(server["tenant_id"])):
+                        workload_policy_id = workload_policy['id']
+                        break
+                action = self.dragon_api.get_resource_action(
+                                                      req,
+                                                      workload_policy_id,
+                                                      server['id'])
+                if action:
+                    policy_executions = self.dragon_api.list_policy_executions(
+                                                             req,
+                                                             workload_policy_id)
+                    if (policy_executions and
+                                            action[0]['created_at'] <
+                                            policy_executions[0]['created_at']):
+                        return "Protected"
+                return "Protection scheduled"
+        except:
+            return "Not enabled"
         return "Not enabled"
 
 
