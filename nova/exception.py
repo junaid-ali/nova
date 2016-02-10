@@ -1764,3 +1764,24 @@ class InvalidVirtualMachineMode(Invalid):
 class IORCLVolumeBootUnsupported(NovaException):
     msg_fmt = _("Booting from volume is not possible for instances using the "
                 "IO Hypervisor.")
+
+
+class DROrchestratorInstanceNotActive(NovaException):
+    msg_fmt = _("The instance must be in ACTIVE status to be protected.")
+
+
+class DROrchestratorVolumeNotAvailable(NovaException):
+    msg_fmt = _("The volume must be in available status to be protected.")
+
+
+class DROrchestratorDatacenterNotFound(NovaException):
+    msg_fmt = _("No data to recover for the selected datacenter.")
+
+
+class DROrchestratorNoNetworkCapacity(NovaException):
+    msg_fmt = _("Not enough capacity to protect more resources.")
+
+
+class DROrchestratorUnknownResourceType(NovaException):
+    msg_fmt = _("Resource type is unknown.")
+
