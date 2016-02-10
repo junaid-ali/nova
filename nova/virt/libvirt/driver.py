@@ -265,7 +265,10 @@ libvirt_opts = [
                 default=[],
                 help='List of guid targets and ranges.'
                      'Syntax is guest-gid:host-gid:count'
-                     'Maximum of 5 allowed.')
+                     'Maximum of 5 allowed.'),
+    cfg.StrOpt('colo_migration_flag',
+               default='VIR_MIGRATE_PEER2PEER, VIR_MIGRATE_LIVE, '
+                       'VIR_MIGRATE_NON_SHARED_INC, VIR_MIGRATE_COLO'),
     ]
 
 CONF = cfg.CONF
@@ -290,6 +293,8 @@ CONF.import_opt('enabled', 'nova.console.serial', group='serial_console')
 CONF.import_opt('proxyclient_address', 'nova.console.serial',
                 group='serial_console')
 CONF.import_opt('hw_disk_discard', 'nova.virt.libvirt.imagebackend',
+                group='libvirt')
+CONF.import_opt('block_replication_path', 'nova.virt.libvirt.imagebackend',
                 group='libvirt')
 
 DEFAULT_FIREWALL_DRIVER = "%s.%s" % (
@@ -2683,7 +2688,10 @@ class LibvirtDriver(driver.ComputeDriver):
             """Called at an interval until the VM is running."""
             state = self.get_info(instance)['state']
 
-            if state == power_state.RUNNING:
+            # TODO(ORBIT): The instance is not going to be resumed until the
+            #              COLO migration has started.
+            if ((utils.ft_enabled(instance) and state == power_state.PAUSED) or
+                    state == power_state.RUNNING):
                 LOG.info(_LI("Instance spawned successfully."),
                          instance=instance)
                 raise loopingcall.LoopingCallDone()
@@ -3500,7 +3508,29 @@ class LibvirtDriver(driver.ComputeDriver):
                                                          'disk',
                                                          disk_mapping,
                                                          inst_type)
+
+                    if utils.ft_secondary(instance):
+                        diskos.target_dev = 'replication'
+                        diskos.alias = 'colo1'
+                        # TODO(ORBIT): Temp
+                        br_extra_specs = {
+                            'blockrep:reference': diskos.alias,
+                            'quota:disk_total_bytes_sec': 70000000
+                        }
+                        inst_type['extra_specs'].update(br_extra_specs)
+                        diskosrepl = self._get_guest_disk_config(instance,
+                                                                 'disk',
+                                                                 disk_mapping,
+                                                                 inst_type,
+                                                                 'replication')
+
                     devices.append(diskos)
+
+                    # TODO(ORBIT): Qemu ordering issue where reference can't be
+                    #              found when buffer disks comes before
+                    #              secondary disk.
+                    if utils.ft_secondary(instance):
+                        devices.append(diskosrepl)
 
                 if 'disk.local' in disk_mapping:
                     disklocal = self._get_guest_disk_config(instance,
@@ -3986,12 +4016,27 @@ class LibvirtDriver(driver.ComputeDriver):
                                                   rescue,
                                                   block_device_info,
                                                   flavor):
-            guest.add_device(config)
+            # TODO(ORBIT): Temp until quorum is supported
+            if (utils.ft_enabled(instance) and
+                config.source_device == "disk" and
+                not utils.ft_secondary(instance)):
+                qemu_cmdline = ('-drive if=virtio,driver=quorum'
+                                ',read-pattern=fifo,cache=none'
+                                ',id=colo1'
+                                ',children.0.file.filename=' +
+                                config.source_path +
+                                ',children.0.driver=' + config.driver_format +
+                                ',vote-threshold=1')
+                guest.add_qemu_cmdline(
+                    vconfig.LibvirtConfigQEMUCommandline(qemu_cmdline))
+            else:
+                guest.add_device(config)
 
         for vif in network_info:
             config = self.vif_driver.get_config(
                 instance, vif, image_meta,
                 flavor, CONF.libvirt.virt_type)
+
             guest.add_device(config)
 
         if ((CONF.libvirt.virt_type == "qemu" or
@@ -4011,14 +4056,15 @@ class LibvirtDriver(driver.ComputeDriver):
                             console.listen_host))
                     guest.add_device(console)
             else:
+                pass
                 # The QEMU 'pty' driver throws away any data if no
                 # client app is connected. Thus we can't get away
                 # with a single type=pty console. Instead we have
                 # to configure two separate consoles.
-                consolelog = vconfig.LibvirtConfigGuestSerial()
-                consolelog.type = "file"
-                consolelog.source_path = self._get_console_log_path(instance)
-                guest.add_device(consolelog)
+                # consolelog = vconfig.LibvirtConfigGuestSerial()
+                # consolelog.type = "file"
+                # consolelog.source_path = self._get_console_log_path(instance)
+                # guest.add_device(consolelog)
 
             consolepty = vconfig.LibvirtConfigGuestSerial()
         else:
@@ -4184,6 +4230,11 @@ class LibvirtDriver(driver.ComputeDriver):
             else:
                 balloon.model = 'xen'
             balloon.period = CONF.libvirt.mem_stats_period_seconds
+
+            # NOTE(ORBIT): Memory balloon disabled when using COLO
+            if utils.ft_enabled(instance):
+                balloon.model = 'none'
+
             guest.add_device(balloon)
 
         return guest
@@ -4463,7 +4514,12 @@ class LibvirtDriver(driver.ComputeDriver):
         else:
             events = []
 
-        launch_flags = events and libvirt.VIR_DOMAIN_START_PAUSED or 0
+        ft = utils.ft_enabled(instance)
+        # NOTE(ORBIT): We always want to launch the fault tolerant instances
+        #              paused so that it has time to do the initial
+        #              synchronization.
+        launch_flags = (events or ft) and libvirt.VIR_DOMAIN_START_PAUSED or 0
+
         domain = None
         try:
             with self.virtapi.wait_for_instance_event(
@@ -4503,7 +4559,9 @@ class LibvirtDriver(driver.ComputeDriver):
                 raise exception.VirtualInterfaceCreateException()
 
         # Resume only if domain has been paused
-        if launch_flags & libvirt.VIR_DOMAIN_START_PAUSED:
+        # NOTE(ORBIT): Fault tolerant instances will be resumed after they have
+        #              done the initial synchronization.
+        if launch_flags & libvirt.VIR_DOMAIN_START_PAUSED and not ft:
             domain.resume()
         return domain
 
@@ -5040,7 +5098,8 @@ class LibvirtDriver(driver.ComputeDriver):
     def check_can_live_migrate_destination(self, context, instance,
                                            src_compute_info, dst_compute_info,
                                            block_migration=False,
-                                           disk_over_commit=False):
+                                           disk_over_commit=False,
+                                           colo=False):
         """Check if it is possible to execute live migration.
 
         This runs checks on the destination host, and then calls
@@ -5050,6 +5109,7 @@ class LibvirtDriver(driver.ComputeDriver):
         :param instance: nova.db.sqlalchemy.models.Instance
         :param block_migration: if true, prepare for block migration
         :param disk_over_commit: if true, allow disk over commit
+        :param colo: if true, make sure that a colo migration is possible
         :returns: a dict containing:
              :filename: name of the tmpfile under CONF.instances_path
              :block_migration: whether this is block migration
@@ -5069,11 +5129,14 @@ class LibvirtDriver(driver.ComputeDriver):
         # Create file on storage, to be checked on source host
         filename = self._create_shared_storage_test_file()
 
+        # TODO(ORBIT): Implement check for COLO migration
+
         return {"filename": filename,
                 "image_type": CONF.libvirt.images_type,
                 "block_migration": block_migration,
                 "disk_over_commit": disk_over_commit,
-                "disk_available_mb": disk_available_mb}
+                "disk_available_mb": disk_available_mb,
+                "colo": colo}
 
     def check_can_live_migrate_destination_cleanup(self, context,
                                                    dest_check_data):
@@ -5126,12 +5189,15 @@ class LibvirtDriver(driver.ComputeDriver):
                        "without shared storage.")
             raise exception.InvalidSharedStorage(reason=reason, path=source)
 
-        # NOTE(mikal): include the instance directory name here because it
-        # doesn't yet exist on the destination but we want to force that
-        # same name to be used
-        instance_path = libvirt_utils.get_instance_path(instance,
-                                                        relative=True)
-        dest_check_data['instance_relative_path'] = instance_path
+        # NOTE(ORBIT): We don't want to use the same directory name when
+        #              executing a COLO migration.
+        if not dest_check_data["colo"]:
+            # NOTE(mikal): include the instance directory name here because it
+            # doesn't yet exist on the destination but we want to force that
+            # same name to be used
+            instance_path = libvirt_utils.get_instance_path(instance,
+                                                            relative=True)
+            dest_check_data['instance_relative_path'] = instance_path
 
         return dest_check_data
 
@@ -5422,7 +5488,12 @@ class LibvirtDriver(driver.ComputeDriver):
 
         # Do live migration.
         try:
-            if block_migration:
+            migrate_data = migrate_data or {}
+            colo_migration = migrate_data.get("colo", False)
+
+            if colo_migration:
+                flaglist = CONF.libvirt.colo_migration_flag.split(',')
+            elif block_migration:
                 if post_copy:
                     raw_flaglist= CONF.libvirt.post_copy_block_migration_flag
                     flaglist = raw_flaglist.split(',')
@@ -5440,14 +5511,49 @@ class LibvirtDriver(driver.ComputeDriver):
 
             dom = self._lookup_by_name(instance["name"])
 
-            pre_live_migrate_data = (migrate_data or {}).get(
+            pre_live_migrate_data = migrate_data.get(
                                         'pre_live_migration_result', {})
             listen_addrs = pre_live_migrate_data.get('graphics_listen_addrs')
 
             migratable_flag = getattr(libvirt, 'VIR_DOMAIN_XML_MIGRATABLE',
                                       None)
 
-            if migratable_flag is None or listen_addrs is None:
+            if colo_migration:
+                relations = (objects.FaultToleranceRelationList.
+                             get_by_primary_instance_uuid(context,
+                                                        instance["uuid"]))
+                # NOTE(ORBIT): Only one secondary instance supported.
+                relation = relations[0]
+                secondary_instance = objects.Instance.get_by_uuid(
+                                     context, relation.secondary_instance_uuid)
+
+                network_info = instance.info_cache.network_info
+                block_device_info = pre_live_migrate_data['block_device_info']
+                disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
+                                                    instance,
+                                                    block_device_info)
+                image_meta = compute_utils.get_image_metadata(
+                                context, self._image_api,
+                                instance['image_ref'], instance)
+                secondary_xml = self._get_guest_xml(context, secondary_instance,
+                                                    network_info, disk_info,
+                                                    image_meta, None,
+                                                    block_device_info, False)
+
+                flaglist = CONF.libvirt.colo_migration_flag.split(',')
+                flagvals = [getattr(libvirt, x.strip()) for x in flaglist]
+                flags = reduce(lambda x, y: x | y, flagvals)
+
+                params = {
+                    libvirt.VIR_MIGRATE_PARAM_DEST_XML: secondary_xml,
+                    libvirt.VIR_MIGRATE_PARAM_DEST_NAME: secondary_instance["name"],
+                    # TODO(ORBIT): replicationa,replicationx for multiple drives?
+                    libvirt.VIR_MIGRATE_PARAM_MIGRATE_DISKS: "replication"
+                }
+                # TODO(ORBIT): Add colo migration max speed?
+                dom.migrateToURI3(CONF.libvirt.live_migration_uri % dest,
+                                  params, flags)
+            elif migratable_flag is None or listen_addrs is None:
                 self._check_graphics_addresses_can_live_migrate(listen_addrs)
 
                 if post_copy:
@@ -5533,7 +5639,20 @@ class LibvirtDriver(driver.ComputeDriver):
                 post_method(context, instance, dest, block_migration,
                             migrate_data)
 
-        timer.f = wait_for_live_migration
+        # TODO(ORBIT): Currently waits until instance is running, might not be
+        #              what we actually should be waiting for to determine if
+        #              the COLO migration is initialized.
+        def wait_for_colo_migration():
+            state = self.get_info(instance)['state']
+
+            if state == power_state.RUNNING:
+                timer.stop()
+                post_method(context, instance, dest)
+
+        if colo_migration:
+            timer.f = wait_for_colo_migration
+        else:
+            timer.f = wait_for_live_migration
         timer.start(interval=0.5).wait()
 
     def _fetch_instance_kernel_ramdisk(self, context, instance):
@@ -5650,6 +5769,12 @@ class LibvirtDriver(driver.ComputeDriver):
         res_data['graphics_listen_addrs']['vnc'] = CONF.vncserver_listen
         res_data['graphics_listen_addrs']['spice'] = CONF.spice.server_listen
 
+        # TODO(ORBIT): The block device info is needed when getting the
+        #              secondary instance xml in live_migration. This might not
+        #              be the best way of getting it there though.
+        if utils.ft_secondary(instance):
+            res_data['block_device_info'] = block_device_info
+
         return res_data
 
     def _create_images_and_backing(self, context, instance, instance_dir,
@@ -5708,6 +5833,16 @@ class LibvirtDriver(driver.ComputeDriver):
                                 project_id=instance['project_id'],
                                 size=info['virt_disk_size'])
 
+                    if utils.ft_secondary(instance):
+                        image = self.image_backend.image(instance,
+                                                         instance_disk,
+                                                         'replication')
+                        # NOTE(ORBIT): No fetching for block replication disks
+                        image.cache(fetch_func=lambda *a, **k: None,
+                                    filename='',
+                                    size=info['virt_disk_size'])
+
+
         # if image has kernel and ramdisk, just download
         # following normal way.
         self._fetch_instance_kernel_ramdisk(context, instance)
@@ -5757,6 +5892,23 @@ class LibvirtDriver(driver.ComputeDriver):
                                       block_device_info=block_device_info,
                                       write_to_disk=True)
             self._conn.defineXML(xml)
+
+    # TODO(ORBIT): Temp until quorum is supported
+    def colo_get_instance_disk_info(self, instance):
+        disk_info = []
+        instance_path = libvirt_utils.get_instance_path(instance)
+        path = os.path.join(instance_path, 'disk')
+        dk_size = int(os.path.getsize(path))
+        backing_file = libvirt_utils.get_disk_backing_file(path)
+        virt_size = disk.get_disk_size(path)
+        over_commit_size = int(virt_size) - dk_size
+        disk_info.append({'type': 'qcow2',
+            'path': path,
+            'virt_disk_size': virt_size,
+            'backing_file': backing_file,
+            'disk_size': dk_size,
+            'over_committed_disk_size': over_commit_size})
+        return jsonutils.dumps(disk_info)
 
     def _get_instance_disk_info(self, instance_name, xml,
                                 block_device_info=None):
@@ -6373,6 +6525,11 @@ class LibvirtDriver(driver.ComputeDriver):
         target = libvirt_utils.get_instance_path(instance)
         # A resize may be in progress
         target_resize = target + '_resize'
+        # Block replication disks might be located elsewhere
+        target_brp = ''
+        if CONF.libvirt.block_replication_path:
+            target_brp = os.path.join(CONF.libvirt.block_replication_path,
+                                      instance['uuid'])
         # Other threads may attempt to rename the path, so renaming the path
         # to target + '_del' (because it is atomic) and iterating through
         # twice in the unlikely event that a concurrent rename occurs between
@@ -6393,10 +6550,16 @@ class LibvirtDriver(driver.ComputeDriver):
                 break
             except Exception:
                 pass
-        # Either the target or target_resize path may still exist if all
-        # rename attempts failed.
+            if target_brp:
+                try:
+                    utils.execute('mv', target_brp, target_del)
+                except Exception:
+                    pass
+
+        # Either the target, target_resize or target_brp path may still exist
+        # if all rename attempts failed.
         remaining_path = None
-        for p in (target, target_resize):
+        for p in (target, target_resize, target_brp):
             if os.path.exists(p):
                 remaining_path = p
                 break
@@ -6454,6 +6617,25 @@ class LibvirtDriver(driver.ComputeDriver):
     def is_supported_fs_format(self, fs_type):
         return fs_type in [disk.FS_FORMAT_EXT2, disk.FS_FORMAT_EXT3,
                            disk.FS_FORMAT_EXT4, disk.FS_FORMAT_XFS]
+
+    def exec_monitor_command(self, instance, cmd, hmp=True):
+        libvirt_qemu = importutils.import_module('libvirt_qemu')
+        dom = self._lookup_by_name(instance['name'])
+        flags = libvirt_qemu.VIR_DOMAIN_QEMU_MONITOR_COMMAND_DEFAULT
+        if hmp:
+            flags = libvirt_qemu.VIR_DOMAIN_QEMU_MONITOR_COMMAND_HMP
+
+        try:
+            LOG.debug("Executing QEMU monitor command: %s", cmd)
+            response = libvirt_qemu.qemuMonitorCommand(dom, cmd, flags)
+            LOG.debug("QEMU monitor command response: %s", response)
+            return response
+        except libvirt.libvirtError as e:
+            LOG.error("QEMU monitor command failed: %s", cmd)
+
+    def colo_cleanup(self, instance, network_info):
+        for vif in network_info:
+            self.vif_driver.cleanup_colo_plug(instance, vif)
 
 
 class HostState(object):

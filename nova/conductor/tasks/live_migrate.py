@@ -39,7 +39,7 @@ CONF.register_opt(migrate_opt)
 class LiveMigrationTask(object):
     def __init__(self, context, instance, destination,
                  block_migration, disk_over_commit,
-                 post_copy):
+                 post_copy, colo):
         self.context = context
         self.instance = instance
         self.destination = destination
@@ -52,6 +52,7 @@ class LiveMigrationTask(object):
         self.servicegroup_api = servicegroup.API()
         self.scheduler_client = scheduler_client.SchedulerClient()
         self.image_api = image.API()
+        self.colo = colo
 
     def execute(self):
         self._check_instance_is_running()
@@ -81,7 +82,8 @@ class LiveMigrationTask(object):
         raise NotImplementedError()
 
     def _check_instance_is_running(self):
-        if self.instance.power_state != power_state.RUNNING:
+        if self.instance.power_state not in (power_state.RUNNING,
+                                             power_state.PAUSED):
             raise exception.InstanceNotRunning(
                     instance_id=self.instance.uuid)
 
@@ -141,7 +143,8 @@ class LiveMigrationTask(object):
     def _call_livem_checks_on_host(self, destination):
         self.migrate_data = self.compute_rpcapi.\
             check_can_live_migrate_destination(self.context, self.instance,
-                destination, self.block_migration, self.disk_over_commit)
+                destination, self.block_migration, self.disk_over_commit,
+                self.colo)
 
     def _find_destination(self):
         # TODO(johngarbutt) this retry loop should be shared
@@ -186,11 +189,12 @@ class LiveMigrationTask(object):
 
 def execute(context, instance, destination,
             block_migration, disk_over_commit,
-            post_copy):
+            post_copy, colo):
     task = LiveMigrationTask(context, instance,
                              destination,
                              block_migration,
                              disk_over_commit,
-                             post_copy)
+                             post_copy,
+                             colo)
     # TODO(johngarbutt) create a superclass that contains a safe_execute call
     return task.execute()

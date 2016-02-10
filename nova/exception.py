@@ -1761,6 +1761,7 @@ class InvalidVirtualMachineMode(Invalid):
     msg_fmt = _("Virtual machine mode '%(vmmode)s' is not recognised")
 
 
+<<<<<<< HEAD
 class IORCLVolumeBootUnsupported(NovaException):
     msg_fmt = _("Booting from volume is not possible for instances using the "
                 "IO Hypervisor.")
@@ -1785,3 +1786,34 @@ class DROrchestratorNoNetworkCapacity(NovaException):
 class DROrchestratorUnknownResourceType(NovaException):
     msg_fmt = _("Resource type is unknown.")
 
+
+class FaultToleranceRelationNotFound(NovaException):
+    msg_fmt = _("No fault tolerance relation found for primary instance UUID "
+                "'%(primary_instance_uuid)s' and secondary instance UUID "
+                "'%(secondary_instance_uuid)s'.")
+
+
+class FaultToleranceRelationByPrimaryNotFound(NovaException):
+    msg_fmt = _("No fault tolerance relation found for instance with UUID "
+                "'%(instance_uuid)s' as primary.")
+
+
+class FaultToleranceRelationBySecondaryNotFound(NovaException):
+    msg_fmt = _("No fault tolerance relation found for instance with UUID "
+                "'%(instance_uuid)s' as secondary.")
+
+
+class COLONoVlanIdAvailable(NovaException):
+    msg_fmt = _("No available VLAN ID found for a COLO connection.")
+
+
+class COLOVlanRangeError(NovaException):
+    msg_fmt = _("The COLO VLAN range '%(vlan_range)s' is invalid: %(error)s")
+
+
+class COLOMultipleInterfacesNotSupported(NovaException):
+    msg_fmt = _("Multiple network interfaces not supported when using COLO.")
+
+
+class InstanceNotFaultTolerant(NovaException):
+    msg_fmt = _("Instance %(instance_uuid)s is not in fault tolerant mode.")

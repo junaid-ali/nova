@@ -1452,6 +1452,15 @@ class API(base.Base):
         self._check_create_policies(context, availability_zone,
                 requested_networks, block_device_mapping)
 
+        # TODO(ORBIT): Since the create instance is cast and not call we need
+        #              throw this exception at the api level so that it is
+        #              clear for the user why it fails.
+        #              Check if there is some better way to handle this where
+        #              the rest of COLO is managed though.
+        if 'ft:enabled' in instance_type['extra_specs']:
+            if requested_networks and len(requested_networks) > 1:
+                raise exception.COLOMultipleInterfacesNotSupported()
+
         if requested_networks and max_count > 1:
             self._check_multiple_instances_and_specified_ip(requested_networks)
             if utils.is_neutron():
@@ -3289,6 +3298,25 @@ class API(base.Base):
             # will not prevent processing events on other hosts
             self.compute_rpcapi.external_instance_event(
                 context, instances_by_host[host], events_by_host[host])
+
+    @check_instance_lock
+    # @check_instance_cell TODO(ORBIT)
+    @check_instance_state(vm_state=[vm_states.ACTIVE])
+    def colo_migrate(self, context, instance, host):
+        """Start a COLO migration."""
+        LOG.debug("Going to try to initiate a COLO migration to %s",
+                  host or "another host", instance=instance)
+
+        instance.task_state = task_states.MIGRATING
+        instance.save(expected_task_state=[None])
+
+        self.compute_task_api.colo_migrate_instance(context, instance, host)
+
+    def colo_failover(self, context, instance):
+        self.compute_rpcapi.colo_failover(context, instance)
+
+    def colo_cleanup(self, context, instance):
+        self.compute_rpcapi.colo_cleanup(context, instance)
 
 
 class HostAPI(base.Base):

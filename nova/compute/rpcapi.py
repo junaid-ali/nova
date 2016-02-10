@@ -352,13 +352,15 @@ class ComputeAPI(object):
                    instance=instance, diff=diff)
 
     def check_can_live_migrate_destination(self, ctxt, instance, destination,
-                                           block_migration, disk_over_commit):
+                                           block_migration, disk_over_commit,
+                                           colo):
         self._check_live_migration_api_version(destination)
         cctxt = self.client.prepare(server=destination, version='3.32')
         return cctxt.call(ctxt, 'check_can_live_migrate_destination',
                           instance=instance,
                           block_migration=block_migration,
-                          disk_over_commit=disk_over_commit)
+                          disk_over_commit=disk_over_commit,
+                          colo=colo)
 
     def check_can_live_migrate_source(self, ctxt, instance, dest_check_data):
         source = _compute_host(None, instance)
@@ -898,6 +900,19 @@ class ComputeAPI(object):
                 security_groups=security_groups,
                 block_device_mapping=block_device_mapping, node=node,
                 limits=limits)
+
+    def post_colo_migration_at_destination(self, ctxt, instance):
+        cctxt = self.client.prepare(server=_compute_host(None, instance))
+        cctxt.cast(ctxt, 'post_colo_migration_at_destination',
+            instance=instance)
+
+    def colo_failover(self, ctxt, instance):
+        cctxt = self.client.prepare(server=_compute_host(None, instance))
+        cctxt.cast(ctxt, 'colo_failover', instance=instance)
+
+    def colo_cleanup(self, ctxt, instance):
+        cctxt = self.client.prepare(server=_compute_host(None, instance))
+        cctxt.cast(ctxt, 'colo_cleanup', instance=instance)
 
 
 class SecurityGroupAPI(object):

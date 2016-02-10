@@ -355,6 +355,15 @@ class ConductorAPI(object):
         return cctxt.call(context, 'object_backport', objinst=objinst,
                           target_version=target_version)
 
+    def colo_deallocate_vlan(self, context, instance_uuid):
+        cctxt = self.client.prepare()
+        return cctxt.cast(context, 'colo_deallocate_vlan',
+                          instance_uuid=instance_uuid)
+
+    def ft_failover(self, context, instance_uuid):
+        cctxt = self.client.prepare()
+        return cctxt.call(context, 'ft_failover', instance_uuid=instance_uuid)
+
 
 class ComputeTaskAPI(object):
     """Client side of the conductor 'compute' namespaced RPC API
@@ -383,8 +392,8 @@ class ComputeTaskAPI(object):
         self.client = rpc.get_client(target, serializer=serializer)
 
     def migrate_server(self, context, instance, scheduler_hint, live, rebuild,
-                  flavor, block_migration, disk_over_commit, post_copy,
-                  reservations=None):
+                  flavor, block_migration, disk_over_commit, post_copy=False,
+                  reservations=None, colo=False):
         if self.client.can_send_version('1.6'):
             version = '1.6'
         else:
@@ -399,7 +408,7 @@ class ComputeTaskAPI(object):
                           block_migration=block_migration,
                           disk_over_commit=disk_over_commit,
                           post_copy=post_copy,
-                          reservations=reservations)
+                          reservations=reservations, colo=colo)
 
     def build_instances(self, context, instances, image, filter_properties,
             admin_password, injected_files, requested_networks,

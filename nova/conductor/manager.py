@@ -28,6 +28,8 @@ from nova.compute import rpcapi as compute_rpcapi
 from nova.compute import task_states
 from nova.compute import utils as compute_utils
 from nova.compute import vm_states
+from nova.conductor.tasks import colo
+from nova.conductor.tasks import fault_tolerance
 from nova.conductor.tasks import live_migrate
 from nova.db import base
 from nova import exception
@@ -47,6 +49,7 @@ from nova import quota
 from nova.scheduler import client as scheduler_client
 from nova.scheduler import driver as scheduler_driver
 from nova.scheduler import utils as scheduler_utils
+from nova import utils
 
 from nova.iorcl import rpcapi as iorcl_rpcapi
 
@@ -440,6 +443,22 @@ class ConductorManager(manager.Manager):
     def object_backport(self, context, objinst, target_version):
         return objinst.obj_to_primitive(target_version=target_version)
 
+    def colo_deallocate_vlan(self, context, instance_uuid):
+        LOG.debug("Releasing COLO VLAN ID allocated for instance %s." %
+                  instance_uuid)
+        self.db.colo_deallocate_vlan(context, instance_uuid)
+
+    def ft_failover(self, context, instance_uuid):
+        ft_tasks = fault_tolerance.FaultToleranceTasks()
+        ft_tasks.failover(context, instance_uuid)
+        # NOTE(ORBIT): We are currently cleaning up everything colo related
+        #              when doing a failover. We can therefore release the
+        #              VLAN ID.
+        #              When COLO is supporting the possibility to recover we
+        #              should probably keep the VLAN allocation by updating
+        #              the instance_uuid to the new primary.
+        self.colo_deallocate_vlan(context, instance_uuid)
+
 
 class ComputeTaskManager(base.Base):
     """Namespace for compute methods.
@@ -473,7 +492,7 @@ class ComputeTaskManager(base.Base):
                                    exception.LiveMigrationWithOldNovaNotSafe)
     def migrate_server(self, context, instance, scheduler_hint, live, rebuild,
             flavor, block_migration, disk_over_commit, post_copy,
-            reservations=None):
+            reservations=None, colo=False):
         if instance and not isinstance(instance, nova_object.NovaObject):
             # NOTE(danms): Until v2 of the RPC API, we need to tolerate
             # old-world instance objects here
@@ -485,7 +504,7 @@ class ComputeTaskManager(base.Base):
         if live and not rebuild and not flavor:
             self._live_migrate(context, instance, scheduler_hint,
                                block_migration, disk_over_commit,
-                               post_copy)
+                               post_copy, colo)
         elif not live and not rebuild and flavor:
             instance_uuid = instance['uuid']
             with compute_utils.EventReporter(context, 'cold_migrate',
@@ -561,12 +580,12 @@ class ComputeTaskManager(base.Base):
                 ex, request_spec, self.db)
 
     def _live_migrate(self, context, instance, scheduler_hint,
-                      block_migration, disk_over_commit, post_copy):
+                      block_migration, disk_over_commit, post_copy, colo):
         destination = scheduler_hint.get("host")
         try:
             live_migrate.execute(context, instance, destination,
                              block_migration, disk_over_commit,
-                             post_copy)
+                             post_copy, colo)
         except (exception.NoValidHost,
                 exception.ComputeServiceUnavailable,
                 exception.InvalidHypervisorType,
@@ -641,6 +660,27 @@ class ComputeTaskManager(base.Base):
             bdms = objects.BlockDeviceMappingList.get_by_instance_uuid(
                     context, instance.uuid)
 
+            if utils.ft_enabled(instance):
+                colo_tasks = colo.COLOTasks()
+
+                # TODO(ORBIT): If the final way of handling allocated vlan tags
+                #              that are outside of the range is by keeping
+                #              them until they get unallocated it might even
+                #              be a good idea to incorporate a sync before
+                #              each allocation.
+                #
+                #              Otherwise it should probably be enough to just
+                #              sync once everytime the conductor service is
+                #              started.
+                colo_tasks.sync_vlan_range()
+
+                vlan_id = colo_tasks.get_vlan_id(context, instance)
+
+                system_metadata = instance.system_metadata
+                system_metadata['colo_vlan_id'] = vlan_id
+                instance.system_metadata = system_metadata
+                instance.save()
+
             self.compute_rpcapi.build_and_run_instance(context,
                     instance=instance, host=host['host'], image=image,
                     request_spec=request_spec,
@@ -651,6 +691,33 @@ class ComputeTaskManager(base.Base):
                     security_groups=security_groups,
                     block_device_mapping=bdms, node=host['nodename'],
                     limits=host['limits'])
+
+            if utils.ft_enabled(instance) and 'ft_secondary_hosts' in host:
+                ft_tasks = fault_tolerance.FaultToleranceTasks()
+                for ft_secondary_host in host['ft_secondary_hosts']:
+                    ft_secondary_instance = ft_tasks.create_secondary_instance(
+                        context, instance.uuid,
+                        host=ft_secondary_host['host'],
+                        node=ft_secondary_host['nodename'],
+                        limits=ft_secondary_host['limits'],
+                        image=image['id'],
+                        request_spec=request_spec,
+                        filter_properties=filter_properties,
+                        admin_password=admin_password,
+                        injected_files=injected_files,
+                        requested_networks=requested_networks,
+                        security_groups=security_groups,
+                        block_device_mapping=block_device_mapping,
+                        legacy_bdm=legacy_bdm)
+
+                    # TODO(ORBIT): Some or all of the actions below should
+                    #              probably be moved.
+                    colo_tasks.wait_for_ready(instance)
+                    ft_secondary_instance.vm_state = vm_states.ACTIVE
+                    ft_secondary_instance.task_state = task_states.MIGRATING
+                    ft_secondary_instance.save(expected_task_state=[None])
+                    compute_api.API().colo_migrate(context, instance,
+                                                   ft_secondary_host["host"])
 
     def _delete_image(self, context, image_id):
         return self.image_api.delete(context, image_id)

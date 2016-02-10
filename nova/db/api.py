@@ -1954,3 +1954,117 @@ def archive_deleted_rows_for_table(context, tablename, max_rows=None):
     """
     return IMPL.archive_deleted_rows_for_table(context, tablename,
                                                max_rows=max_rows)
+
+
+####################
+
+
+def ft_relation_create(context, values):
+    """Creates a fault tolerance relation record in the database.
+
+    :param values: Dictionary containing fault tolerance relation data
+    :returns: The newly created fault tolerance relation model
+    """
+    return IMPL.ft_relation_create(context, values)
+
+
+def ft_relation_destroy(context, primary_instance_uuid,
+                        secondary_instance_uuid):
+    """Deletes the fault tolerance relation for a pair of instances.
+
+    :param primary_instance_uuid: UUID of the primary instance in the
+                                  relation to be deleted
+    :param secondary_instance_uuid: UUID of the secondary instance in the
+                                    relation to be deleted
+    :raises: FaultToleranceRelationNotFound
+    """
+    return IMPL.ft_relation_destroy(context, primary_instance_uuid,
+                                    secondary_instance_uuid)
+
+
+def ft_relation_get_by_uuids(context, primary_instance_uuid,
+                             secondary_instance_uuid):
+    """Returns the relation between a specific pair of UUIDs.
+
+    :param primary_instance_uuid: UUID of a primary instance
+    :param secondary_instance_uuid: UUID of a secondary instance
+    :returns: A fault tolerance relation model between the provided primary and
+              secondary instance
+    :raises: FaultToleranceRelationNotFound
+    """
+    return IMPL.ft_relation_get_by_uuids(context,
+                                         primary_instance_uuid,
+                                         secondary_instance_uuid)
+
+
+def ft_relation_get_by_primary_instance_uuid(context, instance_uuid):
+    """Get a relation matching by primary instance UUID.
+
+    Returns a list of relations where the relation's primary instance UUID is
+    the provided UUID.
+
+    :param instance_uuid: UUID of an instance assumed to be primary
+    :returns: A list of fault tolerance relation models
+    :raises: FaultToleranceRelationByPrimaryNotFound
+    """
+    return IMPL.ft_relation_get_by_primary_instance_uuid(context,
+                                                         instance_uuid)
+
+
+def ft_relation_get_by_secondary_instance_uuid(context, instance_uuid):
+    """Get a relation matching by secondary instance UUID.
+
+    Returns a relation where the relation's secondary instance UUID is the
+    provided UUID.
+
+    :param instance_uuid: UUID of an instance assumed to be secondary
+    :returns: A fault tolerance relation model
+    :raises: FaultToleranceRelationBySecondaryNotFound
+    """
+    return IMPL.ft_relation_get_by_secondary_instance_uuid(context,
+                                                           instance_uuid)
+
+
+def ft_relation_get_by_instance_uuids(context, instance_uuids):
+    """Get all relations matching any of the provided UUIDs.
+
+    Returns a list of relations where either the relation's primary instance or
+    secondary instance UUID is in the of provided UUIDs.
+
+    :param instance_uuids: List of instance UUIDs
+    :returns: A list of fault tolerance relation models
+    """
+    return IMPL.ft_relation_get_by_instance_uuids(context,
+                                                  instance_uuids)
+
+
+####################
+
+
+def colo_sync_vlan_range(context, vlan_min, vlan_max):
+    """Add the range of VLAN IDs that are not already available for COLO
+    connections and remove existing (unallocated) VLAN IDs that are outside of
+    the current range.
+
+    :param vlan_min: The lowest VLAN ID
+    :param vlan_max: The highest VLAN ID
+    """
+    return IMPL.colo_sync_vlan_range(context, vlan_min, vlan_max)
+
+
+def colo_allocate_vlan(context, instance_uuid):
+    """Obtain an available VLAN ID for a COLO connection.
+
+    :param instance_uuid: The UUID of the instance that is using the VLAN ID
+    :returns: The acquired VLAN ID
+    :raises: COLONoVlanIdAvailable
+    """
+    return IMPL.colo_allocate_vlan(context, instance_uuid)
+
+
+def colo_deallocate_vlan(context, instance_uuid):
+    """Release a VLAN ID to make it available for new COLO connections.
+
+    :param instance_uuid: UUID of the instance using the VLAN ID to release
+    """
+    return IMPL.colo_deallocate_vlan(context, instance_uuid)

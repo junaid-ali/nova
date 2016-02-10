@@ -1677,7 +1677,6 @@ class ComputeManager(manager.Manager):
 
     def _build_networks_for_instance(self, context, instance,
             requested_networks, security_groups):
-
         # If we're here from a reschedule the network may already be allocated.
         if strutils.bool_from_string(
                 instance.system_metadata.get('network_allocated', 'False')):
@@ -2116,6 +2115,13 @@ class ComputeManager(manager.Manager):
                 # the host is set on the instance.
                 self._validate_instance_group_policy(context, instance,
                         filter_properties)
+
+                # TODO(ORBIT): Temporary solution to only claim the secondary
+                #              instance, not spawn it.
+                #              (Might not be necessary)
+                if utils.ft_secondary(instance):
+                    return
+
                 with self._build_resources(context, instance,
                         requested_networks, security_groups, image,
                         block_device_mapping) as resources:
@@ -4894,7 +4900,8 @@ class ComputeManager(manager.Manager):
     @wrap_exception()
     @wrap_instance_fault
     def check_can_live_migrate_destination(self, ctxt, instance,
-                                           block_migration, disk_over_commit):
+                                           block_migration, disk_over_commit,
+                                           colo=False):
         """Check if it is possible to execute live migration.
 
         This runs checks on the destination host, and then calls
@@ -4904,6 +4911,7 @@ class ComputeManager(manager.Manager):
         :param instance: dict of instance data
         :param block_migration: if true, prepare for block migration
         :param disk_over_commit: if true, allow disk over commit
+        :param colo: if true, make sure that a colo migration is possible
         :returns: a dict containing migration info
         """
         src_compute_info = obj_base.obj_to_primitive(
@@ -4912,7 +4920,7 @@ class ComputeManager(manager.Manager):
             self._get_compute_info(ctxt, CONF.host))
         dest_check_data = self.driver.check_can_live_migrate_destination(ctxt,
             instance, src_compute_info, dst_compute_info,
-            block_migration, disk_over_commit)
+            block_migration, disk_over_commit, colo)
         migrate_data = {}
         try:
             migrate_data = self.compute_rpcapi.\
@@ -4962,6 +4970,7 @@ class ComputeManager(manager.Manager):
                              storage.
 
         """
+        colo_migration = migrate_data.get("colo", False)
         block_device_info = self._get_instance_block_device_info(
                             context, instance, refresh_conn_info=True)
 
@@ -4976,6 +4985,16 @@ class ComputeManager(manager.Manager):
                      context, instance, "live_migration.pre.start",
                      network_info=network_info)
 
+        # NOTE(ORBIT): Switching to secondary instance here
+        if colo_migration:
+            relations = (objects.FaultToleranceRelationList.
+                         get_by_primary_instance_uuid(context,
+                                                      instance["uuid"]))
+            # NOTE(ORBIT): Only one secondary instance supported.
+            relation = relations[0]
+            instance = objects.Instance.get_by_uuid(
+                                 context, relation.secondary_instance_uuid)
+
         pre_live_migration_data = self.driver.pre_live_migration(context,
                                        instance,
                                        block_device_info,
@@ -4983,9 +5002,11 @@ class ComputeManager(manager.Manager):
                                        disk,
                                        migrate_data)
 
-        # NOTE(tr3buchet): setup networks on destination host
-        self.network_api.setup_networks_on_host(context, instance,
-                                                         self.host)
+        # TODO(ORBIT)
+        if colo_migration:
+            # NOTE(tr3buchet): setup networks on destination host
+            self.network_api.setup_networks_on_host(context, instance,
+                                                    self.host)
 
         # Creating filters to hypervisors and firewalls.
         # An example is that nova-instance-instance-xxx,
@@ -5030,7 +5051,10 @@ class ComputeManager(manager.Manager):
         # Create a local copy since we'll be modifying the dictionary
         migrate_data = dict(migrate_data or {})
         try:
-            if block_migration:
+            # TODO(ORBIT): Temp until quorum is supported
+            if utils.ft_enabled(instance):
+                disk = self.driver.colo_get_instance_disk_info(instance)
+            elif block_migration:
                 disk = self.driver.get_instance_disk_info(instance.name)
             else:
                 disk = None
@@ -5047,11 +5071,17 @@ class ComputeManager(manager.Manager):
                 self._rollback_live_migration(context, instance, dest,
                                               block_migration, migrate_data)
 
+        colo_migration = migrate_data.get("colo", False)
+        if colo_migration:
+            post_method = self._post_colo_migration
+        else:
+            post_method = self._post_live_migration
+
         # Executing live migration
         # live_migration might raises exceptions, but
         # nothing must be recovered in this version.
         self.driver.live_migration(context, instance, dest,
-                                   self._post_live_migration,
+                                   post_method,
                                    self._rollback_live_migration,
                                    block_migration, post_copy,
                                    migrate_data)
@@ -5088,6 +5118,27 @@ class ComputeManager(manager.Manager):
         destroy_disks = not is_shared_block_storage
 
         return (do_cleanup, destroy_disks)
+
+    @wrap_exception()
+    @wrap_instance_fault
+    def _post_colo_migration(self, context, instance, dest):
+        relations = (objects.FaultToleranceRelationList.
+                     get_by_primary_instance_uuid(context,
+                                                  instance["uuid"]))
+        # NOTE(ORBIT): Only one secondary instance supported.
+        relation = relations[0]
+        secondary_instance = objects.Instance.get_by_uuid(
+                context, relation.secondary_instance_uuid)
+
+        # Define domain at destination host, without doing it,
+        # pause/suspend/terminate do not work.
+        self.compute_rpcapi.post_colo_migration_at_destination(context,
+                secondary_instance)
+
+        instance.power_state = self._get_power_state(context, instance)
+        instance.vm_state = vm_states.ACTIVE
+        instance.task_state = None
+        instance.save(expected_task_state=task_states.MIGRATING)
 
     @wrap_exception()
     @wrap_instance_fault
@@ -5204,6 +5255,23 @@ class ComputeManager(manager.Manager):
     @object_compat
     @wrap_exception()
     @wrap_instance_fault
+    def post_colo_migration_at_destination(self, context, instance):
+        network_info = self._get_instance_nw_info(context, instance)
+        block_device_info = self._get_instance_block_device_info(context,
+                                                                 instance)
+
+        self.driver.post_live_migration_at_destination(context, instance,
+                                                       network_info, True,
+                                                       block_device_info)
+
+        instance.power_state = self._get_power_state(context, instance)
+        instance.vm_state = vm_states.ACTIVE
+        instance.task_state = None
+        instance.save(expected_task_state=task_states.MIGRATING)
+
+    @object_compat
+    @wrap_exception()
+    @wrap_instance_fault
     def post_live_migration_at_destination(self, context, instance,
                                            block_migration):
         """Post operations for live migration .
@@ -5281,6 +5349,9 @@ class ComputeManager(manager.Manager):
             if not none, contains implementation specific data.
 
         """
+
+        # TODO(ORBIT): Anything needs to be done after a colo migration?
+
         instance.vm_state = vm_states.ACTIVE
         instance.task_state = None
         instance.save(expected_task_state=[task_states.MIGRATING])
@@ -6320,3 +6391,12 @@ class ComputeManager(manager.Manager):
                     instance.cleaned = True
                 with utils.temporary_mutation(context, read_deleted='yes'):
                     instance.save(context)
+
+    def colo_cleanup(self, context, instance):
+        network_info = compute_utils.get_nw_info_for_instance(instance)
+        self.driver.colo_cleanup(instance, network_info)
+
+    def colo_failover(self, context, instance):
+        ret = self.driver.exec_monitor_command(instance, "colo_lost_heartbeat")
+        # TODO(ORBIT): Handle qemu response
+        LOG.error("colo_lost_heartbeat response: %s", ret)

@@ -420,7 +420,6 @@ def _service_get(context, service_id, with_compute_node=True, session=None,
 
     if with_compute_node:
         query = query.options(joinedload('compute_node'))
-
     result = query.first()
     if not result:
         raise exception.ServiceNotFound(service_id=service_id)
@@ -6152,3 +6151,160 @@ def pci_device_update(context, node_id, address, values):
         device.update(values)
         session.add(device)
     return device
+
+
+####################
+
+
+@require_context
+def ft_relation_create(context, values):
+    try:
+        relation = models.FaultToleranceRelation()
+        relation.update(values)
+        relation.save()
+
+        return relation
+    except db_exc.DBDuplicateEntry:
+        raise exception.KeyPairExists()
+
+
+@require_context
+def ft_relation_destroy(context, primary_instance_uuid,
+                        secondary_instance_uuid):
+    result = (model_query(context, models.FaultToleranceRelation).
+              filter_by(primary_instance_uuid=primary_instance_uuid).
+              filter_by(secondary_instance_uuid=secondary_instance_uuid).
+              soft_delete())
+
+    if not result:
+        raise exception.FaultToleranceRelationNotFound(
+                primary_instance_uuid=primary_instance_uuid,
+                secondary_instance_uuid=secondary_instance_uuid)
+
+
+@require_context
+def ft_relation_get_by_uuids(context, primary_instance_uuid,
+                             secondary_instance_uuid):
+    model = models.FaultToleranceRelation
+    relation = (model_query(context,
+                            model.primary_instance_uuid,
+                            model.secondary_instance_uuid,
+                            base_model=model).
+                filter_by(secondary_instance_uuid=secondary_instance_uuid).
+                filter_by(primary_instance_uuid=primary_instance_uuid).first())
+
+    if not relation:
+        raise exception.FaultToleranceRelationNotFound(
+                primary_instance_uuid=primary_instance_uuid,
+                secondary_instance_uuid=secondary_instance_uuid)
+
+    return relation
+
+
+@require_context
+def ft_relation_get_by_primary_instance_uuid(context, instance_uuid):
+    relations = (model_query(context, models.FaultToleranceRelation).
+                 filter_by(primary_instance_uuid=instance_uuid).all())
+
+    if not relations:
+        raise exception.FaultToleranceRelationByPrimaryNotFound(
+                instance_uuid=instance_uuid)
+
+    return relations
+
+
+@require_context
+def ft_relation_get_by_secondary_instance_uuid(context, instance_uuid):
+    relation = (model_query(context, models.FaultToleranceRelation).
+                filter_by(secondary_instance_uuid=instance_uuid).first())
+
+    if not relation:
+        raise exception.FaultToleranceRelationBySecondaryNotFound(
+                instance_uuid=instance_uuid)
+
+    return relation
+
+
+@require_context
+def ft_relation_get_by_instance_uuids(context, instance_uuids):
+    model = models.FaultToleranceRelation
+    q = model_query(context, model)
+    q = q.filter(or_(model.primary_instance_uuid.in_(instance_uuids),
+                     model.secondary_instance_uuid.in_(instance_uuids)))
+    return q.all()
+
+
+####################
+
+
+@require_context
+def colo_sync_vlan_range(context, vlan_min, vlan_max):
+    session = get_session()
+    with session.begin():
+        model = models.COLOVlanAllocation
+        vlan_allocations = session.query(model).all()
+
+        new_vlan_range = set(range(vlan_min, vlan_max + 1))
+        old_vlan_range = set([va.vlan_id for va in vlan_allocations])
+
+        new_vlan_ids = list(new_vlan_range - old_vlan_range)
+        removed_vlan_ids = list(old_vlan_range - new_vlan_range)
+
+        if new_vlan_ids:
+            new_vlan_allocations = []
+            for vlan_id in new_vlan_ids:
+                vlan_allocation = model()
+                vlan_allocation.update({'vlan_id': vlan_id})
+                new_vlan_allocations.append(vlan_allocation)
+            session.add_all(new_vlan_allocations)
+
+        if removed_vlan_ids:
+            delete_count = (session.query(model).
+                            filter(model.vlan_id.in_(removed_vlan_ids)).
+                            # NOTE(ORBIT): We don't want to delete VLAN IDs
+                            #              that are still active. COLO probably
+                            #              wouldn't handle switching the VLAN
+                            #              tag very well. For now send a
+                            #              warning (see below).
+                            filter(model.instance_uuid == null()).
+                            delete(synchronize_session=False))
+
+            if delete_count != len(removed_vlan_ids):
+                LOG.warning(_("There is active COLO instances that are still "
+                              "using VLAN IDs which are no longer in the "
+                              "COLO VLAN range. This might have been caused "
+                              "by a change of the colo_vlan_range option. To "
+                              "stop using VLAN IDs outside of the new range, "
+                              "re-create the instances."))
+
+
+@require_context
+def colo_allocate_vlan(context, instance_uuid):
+    session = get_session()
+    with session.begin():
+        vlan_allocation = (session.query(models.COLOVlanAllocation).
+                           filter_by(instance_uuid=instance_uuid).first())
+
+        if not vlan_allocation:
+            vlan_allocation = (session.query(models.COLOVlanAllocation).
+                               filter_by(instance_uuid=None).first())
+
+            if not vlan_allocation:
+                raise exception.COLONoVlanIdAvailable()
+
+            vlan_allocation.update({'instance_uuid': instance_uuid})
+            vlan_allocation.save(session)
+
+    return vlan_allocation.vlan_id
+
+
+@require_context
+def colo_deallocate_vlan(context, instance_uuid):
+    session = get_session()
+    with session.begin():
+        vlan_allocation = (session.query(models.COLOVlanAllocation).
+                           filter_by(instance_uuid=instance_uuid).first())
+
+        if vlan_allocation:
+            vlan_allocation.update({'instance_uuid': None})
+            vlan_allocation.save(session)

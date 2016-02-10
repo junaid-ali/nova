@@ -1414,3 +1414,27 @@ class PciDevice(BASE, NovaBase):
                             primaryjoin='and_('
                             'PciDevice.instance_uuid == Instance.uuid,'
                             'PciDevice.deleted == 0)')
+
+
+class FaultToleranceRelation(BASE, NovaBase):
+    """Represents a primary/secondary relation between instances."""
+    __tablename__ = 'fault_tolerance_relations'
+    __table_args__ = (
+        Index('fault_tolerance_relations_primary_instance_uuid_idx',
+              'primary_instance_uuid'),
+    )
+    id = Column(Integer, primary_key=True, nullable=False, autoincrement=True)
+    primary_instance_uuid = Column(String(36), nullable=False)
+    secondary_instance_uuid = Column(String(36), nullable=False)
+
+
+class COLOVlanAllocation(BASE, models.ModelBase):
+    """A COLO VLAN ID allocation for a fault tolerance instance connection."""
+    __tablename__ = 'colo_vlan_allocations'
+    __table_args__ = (
+        Index('colo_vlan_allocations_instance_uuid_idx', 'instance_uuid'),
+    )
+    vlan_id = Column(Integer, primary_key=True, nullable=False,
+                     autoincrement=False)
+    instance_uuid = Column(String(36), ForeignKey('instances.uuid'),
+                           nullable=True)

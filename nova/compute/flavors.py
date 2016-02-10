@@ -89,6 +89,10 @@ system_metadata_flavor_extra_props = [
     #              most likely will change when the split-out of flavor info
     #              in system_metadata happens.
     'io',
+    # NOTE(ORBIT): We also save the FT capability flag in system metadata. This
+    #              most likely will change when the split-out of flavor info
+    #              in system_metadata happens.
+    'ft:',
 ]
 
 

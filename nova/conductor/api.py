@@ -216,6 +216,12 @@ class LocalAPI(object):
     def object_backport(self, context, objinst, target_version):
         return self._manager.object_backport(context, objinst, target_version)
 
+    def colo_deallocate_vlan(self, context, instance_uuid):
+        return self._manager.colo_deallocate_vlan(context, instance_uuid)
+
+    def ft_failover(self, context, instance_uuid):
+        return self._manager.ft_failover(context, instance_uuid)
+
 
 class LocalComputeTaskAPI(object):
     def __init__(self):
@@ -413,3 +419,11 @@ class ComputeTaskAPI(object):
                                                      instance)
 
 
+    def colo_migrate_instance(self, context, instance, host_name):
+        scheduler_hint = {'host': host_name}
+        block_migration=True
+        # NOTE(ORBIT): Let the scheduler decide disk overcommitment
+        disk_over_commit=True
+        self.conductor_compute_rpcapi.migrate_server(
+            context, instance, scheduler_hint, True, False, None,
+            block_migration, disk_over_commit, colo=True)

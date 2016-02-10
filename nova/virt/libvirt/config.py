@@ -41,6 +41,7 @@ LOG = logging.getLogger(__name__)
 # Namespace to use for Nova specific metadata items in XML
 NOVA_NS = "http://openstack.org/xmlns/libvirt/nova/1.0"
 
+QEMU_NS = "http://libvirt.org/schemas/domain/qemu/1.0"
 
 class LibvirtConfigObject(object):
 
@@ -669,6 +670,8 @@ class LibvirtConfigGuestDisk(LibvirtConfigGuestDevice):
         self.driver_format = None
         self.driver_cache = None
         self.driver_discard = None
+        self.driver_io = None
+        self.driver_mode = None
         self.source_path = None
         self.source_protocol = None
         self.source_name = None
@@ -691,6 +694,7 @@ class LibvirtConfigGuestDisk(LibvirtConfigGuestDevice):
         self.physical_block_size = None
         self.readonly = False
         self.snapshot = None
+        self.alias = None
         self.backing_store = None
 
     def format_dom(self):
@@ -711,6 +715,10 @@ class LibvirtConfigGuestDisk(LibvirtConfigGuestDevice):
                 drv.set("cache", self.driver_cache)
             if self.driver_discard is not None:
                 drv.set("discard", self.driver_discard)
+            if self.driver_io is not None:
+                drv.set("io", self.driver_io)
+            if self.driver_mode is not None:
+                drv.set("mode", self.driver_mode)
             dev.append(drv)
 
         if self.source_type == "file":
@@ -792,6 +800,12 @@ class LibvirtConfigGuestDisk(LibvirtConfigGuestDevice):
         if self.readonly:
             dev.append(etree.Element("readonly"))
 
+        if self.alias:
+            dev.append(etree.Element("alias", name=self.alias))
+
+        if self.backing_store:
+            dev.append(self.backing_store.format_dom())
+
         return dev
 
     def parse_dom(self, xmldoc):
@@ -806,6 +820,8 @@ class LibvirtConfigGuestDisk(LibvirtConfigGuestDevice):
                 self.driver_format = c.get('type')
                 self.driver_cache = c.get('cache')
                 self.driver_discard = c.get('discard')
+                self.driver_io = c.get('io')
+                self.driver_mode = c.get('mode')
             elif c.tag == 'source':
                 if self.source_type == 'file':
                     self.source_path = c.get('file')
@@ -830,6 +846,8 @@ class LibvirtConfigGuestDisk(LibvirtConfigGuestDevice):
                     self.target_dev = c.get('dev')
 
                 self.target_bus = c.get('bus', None)
+            elif c.tag == 'alias':
+                self.alias = c.get('name')
             elif c.tag == 'backingStore':
                 b = LibvirtConfigGuestDiskBackingStore()
                 b.parse_dom(c)
@@ -850,6 +868,7 @@ class LibvirtConfigGuestDiskBackingStore(LibvirtConfigObject):
         self.source_ports = []
         self.driver_name = None
         self.driver_format = None
+        self.reference = None
         self.backing_store = None
 
     def parse_dom(self, xmldoc):
@@ -870,10 +889,49 @@ class LibvirtConfigGuestDiskBackingStore(LibvirtConfigObject):
                     if d.tag == 'host':
                         self.source_hosts.append(d.get('name'))
                         self.source_ports.append(d.get('port'))
+            elif c.tag == 'reference':
+                self.reference = c.get('name')
             elif c.tag == 'backingStore':
                 if c.getchildren():
                     self.backing_store = LibvirtConfigGuestDiskBackingStore()
                     self.backing_store.parse_dom(c)
+
+    def format_dom(self):
+        backing = super(LibvirtConfigGuestDiskBackingStore, self).format_dom()
+
+        backing.set("type", self.source_type)
+
+        if self.index is not None:
+            backing.set("index", self.index)
+
+        if self.source_type == "file":
+            backing.append(etree.Element("source", file=self.source_file))
+        elif self.source_type == "block":
+            backing.append(etree.Element("source", dev=self.source_file))
+        elif self.source_type == "mount":
+            backing.append(etree.Element("source", dir=self.source_file))
+        elif self.source_type == "network":
+            source = etree.Element("source", protocol=self.source_protocol)
+            if self.source_name is not None:
+                source.set('name', self.source_name)
+            hosts_info = zip(self.source_hosts, self.source_ports)
+            for name, port in hosts_info:
+                host = etree.Element('host', name=name)
+                if port is not None:
+                    host.set('port', port)
+                source.append(host)
+            backing.append(source)
+
+        if self.driver_format:
+            backing.append(etree.Element("format", type=self.driver_format))
+
+        if self.reference:
+            backing.append(etree.Element("reference", name=self.reference))
+
+        if self.backing_store:
+            backing.append(self.backing_store.format_dom())
+
+        return backing
 
 
 class LibvirtConfigGuestSnapshotDisk(LibvirtConfigObject):
@@ -1281,7 +1339,9 @@ class LibvirtConfigMemoryBalloon(LibvirtConfigGuestDevice):
     def format_dom(self):
         dev = super(LibvirtConfigMemoryBalloon, self).format_dom()
         dev.set('model', str(self.model))
-        dev.append(etree.Element('stats', period=str(self.period)))
+        # NOTE(ORBIT): Skip stats when model is 'none'
+        if self.model != 'none':
+            dev.append(etree.Element('stats', period=str(self.period)))
         return dev
 
 
@@ -1599,6 +1659,7 @@ class LibvirtConfigGuest(LibvirtConfigObject):
         self.devices = []
         self.metadata = []
         self.idmaps = []
+        self.qemu_cmdline = []
 
     def _format_basic_props(self, root):
         root.append(self._text_node("uuid", self.uuid))
@@ -1674,8 +1735,18 @@ class LibvirtConfigGuest(LibvirtConfigObject):
             idmaps.append(idmap.format_dom())
         root.append(idmaps)
 
+    def _format_qemu_cmdline(self, root):
+        if len(self.qemu_cmdline) == 0:
+            return
+        for cmdline in self.qemu_cmdline:
+            root.append(cmdline.format_dom())
+
     def format_dom(self):
         root = super(LibvirtConfigGuest, self).format_dom()
+
+        # TODO(ORBIT): Temp
+        if len(self.qemu_cmdline) > 0:
+            root = etree.Element("domain", nsmap={"qemu": QEMU_NS})
 
         root.set("type", self.virt_type)
 
@@ -1699,6 +1770,8 @@ class LibvirtConfigGuest(LibvirtConfigObject):
         self._format_devices(root)
 
         self._format_idmaps(root)
+
+        self._format_qemu_cmdline(root)
 
         return root
 
@@ -1740,6 +1813,9 @@ class LibvirtConfigGuest(LibvirtConfigObject):
 
     def set_clock(self, clk):
         self.clock = clk
+
+    def add_qemu_cmdline(self, cmdline):
+        self.qemu_cmdline.append(cmdline)
 
 
 class LibvirtConfigGuestSnapshot(LibvirtConfigObject):
@@ -1982,3 +2058,22 @@ class LibvirtConfigGuestMetaNovaOwner(LibvirtConfigObject):
             project.set("uuid", self.projectid)
             meta.append(project)
         return meta
+
+
+class LibvirtConfigQEMUCommandline(LibvirtConfigObject):
+
+    def __init__(self, cmdline):
+        super(LibvirtConfigQEMUCommandline, self).__init__(
+            root_name="commandline",
+            ns_prefix="qemu",
+            ns_uri=QEMU_NS)
+
+        self.cmdline = cmdline
+
+    def format_dom(self):
+        qemu_cmdline = super(LibvirtConfigQEMUCommandline, self).format_dom()
+
+        for arg in self.cmdline.split():
+            qemu_cmdline.append(self._new_node("arg", value=arg))
+
+        return qemu_cmdline
