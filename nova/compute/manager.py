@@ -5003,7 +5003,7 @@ class ComputeManager(manager.Manager):
                                        migrate_data)
 
         # TODO(ORBIT)
-        if colo_migration:
+        if not colo_migration:
             # NOTE(tr3buchet): setup networks on destination host
             self.network_api.setup_networks_on_host(context, instance,
                                                     self.host)
@@ -5138,6 +5138,7 @@ class ComputeManager(manager.Manager):
         instance.power_state = self._get_power_state(context, instance)
         instance.vm_state = vm_states.ACTIVE
         instance.task_state = None
+        instance.launched_at = timeutils.utcnow()
         instance.save(expected_task_state=task_states.MIGRATING)
 
     @wrap_exception()
@@ -6392,11 +6393,6 @@ class ComputeManager(manager.Manager):
                 with utils.temporary_mutation(context, read_deleted='yes'):
                     instance.save(context)
 
-    def colo_cleanup(self, context, instance):
-        network_info = compute_utils.get_nw_info_for_instance(instance)
-        self.driver.colo_cleanup(instance, network_info)
-
     def colo_failover(self, context, instance):
-        ret = self.driver.exec_monitor_command(instance, "colo_lost_heartbeat")
-        # TODO(ORBIT): Handle qemu response
-        LOG.error("colo_lost_heartbeat response: %s", ret)
+        LOG.info("Executing COLO failover command", instance=instance)
+        self.driver.colo_failover(instance)

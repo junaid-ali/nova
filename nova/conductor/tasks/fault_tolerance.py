@@ -16,10 +16,12 @@
 from nova import compute
 from nova.compute import flavors
 from nova.compute import utils as compute_utils
+from nova.compute import vm_states
 from nova import exception
 from nova import network
 from nova import objects
 from nova.openstack.common import log as logging
+from nova.openstack.common import loopingcall
 from nova import utils
 
 LOG = logging.getLogger(__name__)
@@ -36,18 +38,19 @@ class FaultToleranceTasks(object):
         p_instance.save()
         s_instance.save()
 
-    def _failover_floating_ip(self, context, p_instance, s_instance):
+    def _failover_network(self, context, p_instance, s_instance):
         p_nw_info = compute_utils.get_nw_info_for_instance(p_instance)
-        s_nw_info = compute_utils.get_nw_info_for_instance(s_instance)
-        floating_ips = p_nw_info[0].floating_ips()
-        if floating_ips:
-            # TODO(ORBIT): Multiple fixed/floating ips?
-            floating_ip = floating_ips[0]
-            fixed_ip = s_nw_info[0].fixed_ips()[0]
-            self.network_api.associate_floating_ip(
-                context, s_instance,
-                floating_address=floating_ip['address'],
-                fixed_address=fixed_ip['address'])
+        # TODO(ORBIT): Multiple nics
+        vif = p_nw_info[0]
+
+        requested_networks = objects.NetworkRequestList(
+            objects=[objects.NetworkRequest(port_id=vif["id"])])
+
+        self.network_api.deallocate_for_instance(
+            context, p_instance, requested_networks=requested_networks)
+
+        self.network_api.allocate_for_instance(
+            context, s_instance, requested_networks=requested_networks)
 
     def failover(self, context, instance_uuid):
         instance = self.compute_api.get(context, instance_uuid,
@@ -69,8 +72,6 @@ class FaultToleranceTasks(object):
             self.compute_api.colo_failover(context, p_instance)
 
             self.compute_api.delete(context, s_instance)
-
-            self.compute_api.colo_cleanup(context, p_instance)
         else:
             relations = objects.FaultToleranceRelationList.\
                     get_by_primary_instance_uuid(context, instance.uuid)
@@ -85,11 +86,13 @@ class FaultToleranceTasks(object):
 
             self.compute_api.colo_failover(context, s_instance)
 
-            self._failover_floating_ip(context, p_instance, s_instance)
+            self._failover_network(context, p_instance, s_instance)
             self._failover_name(context, p_instance, s_instance)
 
             del s_instance.system_metadata['instance_type_extra_ft:secondary']
             s_instance.save()
+
+            self.compute_api.delete(context, p_instance)
 
         relation.destroy()
 
@@ -98,8 +101,6 @@ class FaultToleranceTasks(object):
     #              Right now, we just change the role in the extra_specs.
     def _get_secondary_flavor(self, flavor, primary_instance):
         flavor['extra_specs']['ft:secondary'] = '1'
-        vlan_id = primary_instance['system_metadata']['colo_vlan_id']
-        flavor['extra_specs']['ft:colo_vlan_id'] = vlan_id
         return flavor
 
     def create_secondary_instance(self, context, primary_instance_uuid,
@@ -157,3 +158,18 @@ class FaultToleranceTasks(object):
         relation.create(context)
 
         return secondary_instance
+
+    # TODO(ORBIT): Handle timeout?
+    def wait_for_ready(self, instance):
+        def _wait():
+            """Called at an interval until the VM is running."""
+            instance.refresh()
+            LOG.error("waiting")
+
+            if instance.vm_state == vm_states.ACTIVE:
+                LOG.info("Instance ready for COLO migration.",
+                         instance=instance)
+                raise loopingcall.LoopingCallDone()
+
+        timer = loopingcall.FixedIntervalLoopingCall(_wait)
+        timer.start(interval=0.5).wait()
