@@ -216,8 +216,8 @@ class OrchestratorManager(manager.Manager):
         if triggerProtect or self._loops_to_protect == 0:
             self._dr_protect(context, self._policy_id)
             self._loops_to_protect = self._default_loops_to_protect
-        else:
-            self._loops_to_protect -= 1
+        
+        self._loops_to_protect -= 1
 
 
 
