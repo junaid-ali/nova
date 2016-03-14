@@ -3198,7 +3198,8 @@ class API(base.Base):
     @check_instance_cell
     @check_instance_state(vm_state=[vm_states.ACTIVE])
     def live_migrate(self, context, instance, block_migration,
-                     disk_over_commit, post_copy, host_name, colo=False):
+                     disk_over_commit, host_name, 
+                     post_copy=False, colo=False):
         """Migrate a server lively to a new host."""
         LOG.debug("Going to try to live migrate instance to %s",
                   host_name or "another host", instance=instance)
