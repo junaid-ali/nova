@@ -464,3 +464,8 @@ class ComputeTaskAPI(object):
         cctxt = self.client.prepare()
         return cctxt.cast(context, 'io_reset_guest',
                           instance=instance)
+
+    def colo_deploy(self, ctxt, primary_instance, host=None):
+        cctxt = self.client.prepare(version='1.9')
+        cctxt.cast(ctxt, 'colo_deploy', primary_instance=primary_instance,
+                   host=host)
