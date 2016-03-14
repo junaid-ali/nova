@@ -475,8 +475,8 @@ class ComputeTaskManager(base.Base):
                                    exception.MigrationPreCheckError,
                                    exception.LiveMigrationWithOldNovaNotSafe)
     def migrate_server(self, context, instance, scheduler_hint, live, rebuild,
-            flavor, block_migration, disk_over_commit, post_copy=False,
-            reservations=None, colo=False):
+            flavor, block_migration, disk_over_commit, reservations=None, 
+            post_copy=False, colo=False):
         if instance and not isinstance(instance, nova_object.NovaObject):
             # NOTE(danms): Until v2 of the RPC API, we need to tolerate
             # old-world instance objects here

@@ -387,8 +387,8 @@ class ComputeTaskAPI(object):
         self.client = rpc.get_client(target, serializer=serializer)
 
     def migrate_server(self, context, instance, scheduler_hint, live, rebuild,
-                  flavor, block_migration, disk_over_commit, post_copy=False,
-                  reservations=None, colo=False):
+                  flavor, block_migration, disk_over_commit, reservations=None, 
+                  post_copy=False, colo=False):
         if self.client.can_send_version('1.6'):
             version = '1.6'
         else:
@@ -402,8 +402,8 @@ class ComputeTaskAPI(object):
                           live=live, rebuild=rebuild, flavor=flavor_p,
                           block_migration=block_migration,
                           disk_over_commit=disk_over_commit,
-                          post_copy=post_copy,
-                          reservations=reservations, colo=colo)
+                          reservations=reservations, 
+                          post_copy=post_copy, colo=colo)
 
     def build_instances(self, context, instances, image, filter_properties,
             admin_password, injected_files, requested_networks,
