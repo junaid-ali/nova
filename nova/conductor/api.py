@@ -242,7 +242,7 @@ class LocalComputeTaskAPI(object):
         scheduler_hint = {'host': host_name}
         self._manager.migrate_server(
             context, instance, scheduler_hint, True, False, None,
-            block_migration, disk_over_commit, post_copy=post_copy, None, 
+            block_migration, disk_over_commit, None, post_copy=post_copy, 
             colo=colo)
 
     def build_instances(self, context, instances, image,
@@ -365,7 +365,7 @@ class ComputeTaskAPI(object):
         scheduler_hint = {'host': host_name}
         self.conductor_compute_rpcapi.migrate_server(
             context, instance, scheduler_hint, True, False, None,
-            block_migration, disk_over_commit, post_copy=post_copy, None, 
+            block_migration, disk_over_commit, None, post_copy=post_copy,
             colo=colo)
 
     def build_instances(self, context, instances, image, filter_properties,
