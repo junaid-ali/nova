@@ -340,7 +340,7 @@ class AdminActionsController(wsgi.Controller):
                                        want_objects=True)
         try:
             self.compute_api.live_migrate(context, instance, block_migration,
-                                          disk_over_commit, post_copy, host)
+                                          disk_over_commit, host, post_copy)
         except (exception.NoValidHost,
                 exception.ComputeServiceUnavailable,
                 exception.InvalidHypervisorType,
