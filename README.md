@@ -25,6 +25,8 @@ Prerequisites
 These patches are based on the Juno version of Nova. Make sure that your
 OpenStack setup is running or is compatible with Nova running Juno.
 
+Post-copy features (`userfaultfd`) are available in Linux Kernel since version 4.6.0. Therefore, a kernel 4.6.0 or newer is required.
+
 Post-copy features were introduced in QEMU since version 2.5.0, therefore, it
 requires to have installed at least that version.
 
